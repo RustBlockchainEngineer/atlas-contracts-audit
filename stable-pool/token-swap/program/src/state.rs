@@ -7,7 +7,9 @@ use solana_program::{
     program_error::ProgramError,
     program_pack::{IsInitialized, Pack, Sealed},
     pubkey::Pubkey,
+
 };
+use crate::error::SwapError;
 
 /// Trait representing access to program state across all versions
 #[enum_dispatch]
@@ -38,6 +40,7 @@ pub trait SwapState {
     /// Curve associated with swap
     fn swap_curve(&self) -> &SwapCurve;
 }
+
 
 /// All versions of SwapState
 #[enum_dispatch(SwapState)]
@@ -248,4 +251,113 @@ impl Pack for SwapV1 {
             swap_curve: SwapCurve::unpack_from_slice(swap_curve)?,
         })
     }
+}
+
+///Program State
+#[repr(C)]
+#[derive(Debug, Default, PartialEq)]
+pub struct GlobalState {
+    /// Initialized state.
+    pub is_initialized:bool,
+
+    /// program owner address to update all
+    pub owner: Pubkey,
+
+    /// Fee owner address
+    pub fee_owner: Pubkey,
+
+    /// initial lp supply
+    pub initial_supply: u64,
+
+    ///Fee ratio
+    pub fees: Fees,
+
+    ///Curve Type to swap
+    pub swap_curve: SwapCurve,
+}
+impl Sealed for GlobalState {}
+impl Pack for GlobalState{
+    /// Size of the Program State
+    const LEN:usize = 130; // add one for the version enum
+
+    /// Pack a swap into a byte array, based on its version
+    fn pack_into_slice(&self, output: &mut [u8]) {
+        let output = array_mut_ref![output, 0, GlobalState::LEN];
+        let (
+            is_initialized,
+            state_owner,
+            fee_owner,
+            initial_supply,
+            fees,
+            swap_curve,
+        ) = mut_array_refs![output, 1, 32, 32, 8, 24, 33];
+        is_initialized[0] = self.is_initialized as u8;
+        state_owner.copy_from_slice(self.owner.as_ref());
+        fee_owner.copy_from_slice(self.fee_owner.as_ref());
+        *initial_supply = self.initial_supply.to_le_bytes();
+        self.fees.pack_into_slice(&mut fees[..]);
+        self.swap_curve.pack_into_slice(&mut swap_curve[..]);
+    }
+
+    /// Unpacks a byte buffer into a [SwapV1](struct.SwapV1.html).
+    fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
+        if input.len() < GlobalState::LEN{
+            return Err(SwapError::InvalidInstruction.into());    
+        }
+        let input = array_ref![input, 0, GlobalState::LEN];
+        #[allow(clippy::ptr_offset_with_cast)]
+        let (
+            is_initialized,
+            state_owner,
+            fee_owner,
+            initial_supply,
+            fees,
+            swap_curve,
+        ) = array_refs![input, 1, 32, 32, 8,  24, 33];
+        Ok(Self {
+            is_initialized: match is_initialized {
+                [0] => false,
+                [1] => true,
+                _ => return Err(ProgramError::InvalidAccountData),
+            },
+            owner: Pubkey::new_from_array(*state_owner),
+            fee_owner: Pubkey::new_from_array(*fee_owner),
+            initial_supply:u64::from_le_bytes(*initial_supply),
+            fees: Fees::unpack_from_slice(fees)?,
+            swap_curve: SwapCurve::unpack_from_slice(swap_curve)?,
+        })
+    }
+}
+
+
+impl GlobalState{
+    /// is program account initialized
+    pub fn is_initialized(&self) -> bool {
+        return self.is_initialized
+    }
+    /// state owner to change current program state
+    pub fn owner(&self) -> &Pubkey {
+        &self.owner
+    }
+
+    /// fee owner to recevie when swap
+    pub fn fee_owner(&self) -> &Pubkey {
+        &self.fee_owner
+    }
+
+    /// initial supply to create pool
+    pub fn initial_supply(&self) -> u64 {
+        self.initial_supply
+    }
+    
+    /// fees redistributed
+    pub fn fees(&self) -> &Fees {
+        &self.fees
+    }
+    
+    /// fee calculators
+    pub fn swap_curve(&self) -> &SwapCurve {
+        &self.swap_curve
+    }
+
 }
