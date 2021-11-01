@@ -574,14 +574,3 @@ pub fn swap(
         data,
     })
 }
-
-/// Unpacks a reference from a bytes buffer.
-/// TODO actually pack / unpack instead of relying on normal memory layout.
-pub fn unpack<T>(input: &[u8]) -> Result<&T, ProgramError> {
-    if input.len() < size_of::<u8>() + size_of::<T>() {
-        return Err(ProgramError::InvalidAccountData);
-    }
-    #[allow(clippy::cast_ptr_alignment)]
-    let val: &T = unsafe { &*(&input[1] as *const u8 as *const T) };
-    Ok(val)
-}

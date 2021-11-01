@@ -271,6 +271,13 @@ impl Processor {
             return Err(SwapError::InvalidCloseAuthority.into());
         }
 
+        if token_a.is_frozen(){
+            return Err(SwapError::InvalidFreezeAuthority.into());
+        }
+        if token_b.is_frozen(){
+            return Err(SwapError::InvalidFreezeAuthority.into());
+        }
+
         if pool_mint.supply != 0 {
             return Err(SwapError::InvalidSupply.into());
         }
@@ -299,14 +306,6 @@ impl Processor {
         fees.validate()?;
         swap_curve.calculator.validate()?;
                 
-        // let token_a_amount_u128 = to_u128(token_a.amount)?;
-        // let token_b_amount_u128 = to_u128(token_a.amount)?;
-        // // let initial_supply = (token_a_amount_u128 + token_b_amount_u128)/2;
-        // let initial_supply = token_a_amount_u128.checked_add(token_b_amount_u128);
-        // initial_supply = initial_supply.checked_div(2)?;
-        // msg!("token_a_amount_u128 : {}, token_b_amount_u128 : {} , initial_supply : {}",
-        //     token_a_amount_u128, token_b_amount_u128, initial_supply);
-        
         let initial_amount = swap_curve.calculator.new_pool_supply();
 
         Self::token_mint_to(

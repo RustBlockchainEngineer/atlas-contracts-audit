@@ -48,15 +48,6 @@ fn validate_fraction(numerator: u64, denominator: u64) -> Result<(), SwapError> 
 }
 
 impl Fees {
-    /// Calculate the withdraw fee in pool tokens
-    // pub fn owner_withdraw_fee(&self, pool_tokens: u128) -> Option<u128> {
-    //     calculate_fee(
-    //         pool_tokens,
-    //         u128::try_from(self.owner_withdraw_fee_numerator).ok()?,
-    //         u128::try_from(self.owner_withdraw_fee_denominator).ok()?,
-    //     )
-    // }
-
     /// Calculate the trading fee in trading tokens
     pub fn trading_fee(&self, trading_tokens: u128) -> Option<u128> {
         calculate_fee(
@@ -66,37 +57,11 @@ impl Fees {
         )
     }
 
-    /// Calculate the owner trading fee in trading tokens
-    // pub fn owner_trading_fee(&self, trading_tokens: u128) -> Option<u128> {
-    //     calculate_fee(
-    //         trading_tokens,
-    //         u128::try_from(self.owner_trade_fee_numerator).ok()?,
-    //         u128::try_from(self.owner_trade_fee_denominator).ok()?,
-    //     )
-    // }
-
-    /// Calculate the host fee based on the owner fee, only used in production
-    /// situations where a program is hosted by multiple frontends
-    // pub fn host_fee(&self, owner_fee: u128) -> Option<u128> {
-    //     calculate_fee(
-    //         owner_fee,
-    //         u128::try_from(self.host_fee_numerator).ok()?,
-    //         u128::try_from(self.host_fee_denominator).ok()?,
-    //     )
-    // }
 
     /// Validate that the fees are reasonable
     pub fn validate(&self) -> Result<(), SwapError> {
         validate_fraction(self.trade_fee_numerator, self.trade_fee_denominator)?;
-        // validate_fraction(
-        //     self.owner_trade_fee_numerator,
-        //     self.owner_trade_fee_denominator,
-        // )?;
-        // validate_fraction(
-        //     self.owner_withdraw_fee_numerator,
-        //     self.owner_withdraw_fee_denominator,
-        // )?;
-        // validate_fraction(self.host_fee_numerator, self.host_fee_denominator)?;
+        
         Ok(())
     }
 }

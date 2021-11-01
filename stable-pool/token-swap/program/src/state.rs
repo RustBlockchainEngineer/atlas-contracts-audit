@@ -183,7 +183,7 @@ impl Pack for SwapV1 {
     const LEN: usize = 323;
 
     fn pack_into_slice(&self, output: &mut [u8]) {
-        let output = array_mut_ref![output, 0, 323];
+        let output = array_mut_ref![output, 0, SwapV1::LEN];
         let (
             is_initialized,
             nonce,
@@ -215,7 +215,7 @@ impl Pack for SwapV1 {
         if input.len() < Self::LEN {
             return Err(ProgramError::MaxSeedLengthExceeded);
         }
-        let input = array_ref![input, 0, 323];
+        let input = array_ref![input, 0, SwapV1::LEN];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
             is_initialized,
