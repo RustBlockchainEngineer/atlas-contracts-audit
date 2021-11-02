@@ -1,6 +1,6 @@
 //! Program state processor
 
-use crate::constraints::{SwapConstraints, SWAP_CONSTRAINTS};
+use crate::constraints::*;
 use crate::{
     curve::{
         base::SwapCurve,
@@ -151,6 +151,65 @@ impl Processor {
         )
     }
 
+    pub fn check_pda(program_id:&Pubkey, key: &Pubkey, tag: &str)->Result<(), ProgramError>{
+        let seeds = [
+            tag.as_bytes(),
+            program_id.as_ref(),
+        ];
+
+        let (pda_key, _bump) = Pubkey::find_program_address(&seeds, program_id);
+        if pda_key != *key {
+            return Err(SwapError::InvalidPdaAddress.into());
+        }
+        else {
+            Ok(())
+        }
+    }
+    pub fn create_or_allocate_account_raw<'a>(
+        program_id: Pubkey,
+        new_account_info: &AccountInfo<'a>,
+        rent_sysvar_info: &AccountInfo<'a>,
+        system_program_info: &AccountInfo<'a>,
+        payer_info: &AccountInfo<'a>,
+        size: usize,
+        signer_seeds: &[&[u8]],
+    ) -> Result<(), ProgramError> {
+        let rent = &Rent::from_account_info(rent_sysvar_info)?;
+        let required_lamports = rent
+            .minimum_balance(size)
+            .max(1)
+            .saturating_sub(new_account_info.lamports());
+    
+        if required_lamports > 0 {
+            msg!("Transfer {} lamports to the new account", required_lamports);
+            invoke(
+                &system_instruction::transfer(&payer_info.key, new_account_info.key, required_lamports),
+                &[
+                    payer_info.clone(),
+                    new_account_info.clone(),
+                    system_program_info.clone(),
+                ],
+            )?;
+        }
+    
+        msg!("Allocate space for the account");
+        invoke_signed(
+            &system_instruction::allocate(new_account_info.key, size.try_into().map_err(|_| SwapError::InvalidAllocateSpaceForAccount)?),
+            &[new_account_info.clone(), system_program_info.clone()],
+            &[&signer_seeds],
+        )?;
+    
+        msg!("Assign the account to the owning program");
+        invoke_signed(
+            &system_instruction::assign(new_account_info.key, &program_id),
+            &[new_account_info.clone(), system_program_info.clone()],
+            &[&signer_seeds],
+        )?;
+        msg!("Completed assignation!");
+    
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn check_accounts(
         token_swap: &dyn SwapState,
@@ -202,6 +261,7 @@ impl Processor {
         }
         Ok(())
     }
+    
     pub fn process_set_global_state(
         program_id: &Pubkey,
         owner: &Pubkey,
@@ -212,6 +272,97 @@ impl Processor {
         accounts: &[AccountInfo],
     ) -> ProgramResult {
 
+        //load account info
+        let account_info_iter = &mut accounts.iter();
+        let global_state_info = next_account_info(account_info_iter)?;
+
+        let current_owner_info = next_account_info(account_info_iter)?;
+
+        let system_info = next_account_info(account_info_iter)?;
+        let rent_info = next_account_info(account_info_iter)?;
+
+        Self::check_pda(program_id, global_state_info.key, SWAP_TAG)?;
+        
+        if !current_owner_info.is_signer{
+            return Err(SwapError::InvalidSigner.into());
+        }
+
+        if *system_info.key != Pubkey::from_str(SYSTEM_PROGRAM_ID).map_err(|_| SwapError::InvalidSystemProgramId)?{
+            return Err(SwapError::InvalidSystemProgramId.into());
+        }
+
+        if *rent_info.key != Pubkey::from_str(RENT_SYSVAR_ID).map_err(|_| SwapError::InvalidRentSysvarId)?{
+            return Err(SwapError::InvalidRentSysvarId.into());
+        }
+
+        let seeds = [
+            SWAP_TAG.as_bytes(),
+            program_id.as_ref(),
+        ];
+
+        let (_pda_key, bump) = Pubkey::find_program_address(&seeds, program_id);
+        
+        if global_state_info.data_is_empty(){
+            let size = ProgramState::get_packed_len();
+
+            Self::create_or_allocate_account_raw(
+                *program_id,
+                global_state_info,
+                rent_info,
+                system_info,
+                current_owner_info,
+                size,
+                &[
+                    SWAP_TAG.as_bytes(),
+                    program_id.as_ref(),
+                    &[bump],
+                ],
+            )?;
+        }
+
+        let mut program_state = GlobalState::unpack_from_slice(&global_state_info.data.borrow())?;
+
+        if program_state.is_initialized == false
+        {
+            program_state.state_owner = Pubkey::from_str(INITIAL_STATE_OWNER).map_err(|_| SwapError::InvalidStateOwner)?;
+            program_state.is_initialized = true;
+            program_state.fees = Fees {
+                fixed_fee_numerator: INITIAL_FEES.fixed_fee_numerator,
+                return_fee_numerator: INITIAL_FEES.return_fee_numerator,
+                fee_denominator: INITIAL_FEES.fee_denominator,
+            };
+            program_state.fee_owner = Pubkey::from_str(INITIAL_FEE_OWNER_KEY).map_err(|_| SwapError::IncorrectFeeAccount)?;
+            program_state.initial_supply = INITIAL_SWAP_POOL_AMOUNT;
+            program_state.swap_curve = SwapCurve {
+                    curve_type: CurveType::ConstantProduct,
+                    calculator: Box::new(
+                        ConstantProductCurve{}
+                    )
+                };
+            program_state.pack_into_slice(&mut &mut global_state_info.data.borrow_mut()[..]);
+        }
+        
+        if program_state.state_owner != *current_owner_info.key
+        {
+            return Err(SwapError::InvalidStateOwner.into());
+        }
+
+        SWAP_CONSTRAINTS.validate_curve(&swap_curve)?;
+        SWAP_CONSTRAINTS.validate_fees(&fees)?;
+
+        fees.validate()?;
+        swap_curve.calculator.validate()?;
+
+        //Save the program state
+        let obj = ProgramState{
+            is_initialized:true,
+            initial_supply: initial_supply,
+            state_owner: *new_state_owner_info.key,
+            fee_owner: *fee_owner_info.key,
+            fees,
+            swap_curve,
+        };
+        obj.pack_into_slice(&mut &mut global_state_info.data.borrow_mut()[..]);
         Ok(())
     }
 

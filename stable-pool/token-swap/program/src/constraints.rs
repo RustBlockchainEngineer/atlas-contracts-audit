@@ -90,3 +90,8 @@ pub const SWAP_CONSTRAINTS: Option<SwapConstraints> = {
         None
     }
 };
+pub const SWAP_TAG:&str = "atals-swap";
+
+pub const RENT_SYSVAR_ID:&str = "SysvarRent111111111111111111111111111111111";
+
+pub const SYSTEM_PROGRAM_ID:&str = "11111111111111111111111111111111";
