@@ -10,7 +10,7 @@ use crate::{
     error::SwapError,
     instruction::{
         DepositAllTokenTypes, DepositSingleTokenTypeExactAmountIn, Initialize, Swap,
-        SwapInstruction, WithdrawAllTokenTypes, WithdrawSingleTokenTypeExactAmountOut,
+        SwapInstruction, WithdrawAllTokenTypes, WithdrawSingleTokenTypeExactAmountOut,SetGlobalState
     },
     state::{SwapState, SwapV1, SwapVersion},
 };
@@ -200,6 +200,18 @@ impl Processor {
                 return Err(SwapError::IncorrectFeeAccount.into());
             }
         }
+        Ok(())
+    }
+    pub fn process_set_global_state(
+        program_id: &Pubkey,
+        owner: &Pubkey,
+        fee_owner: &Pubkey,
+        initial_supply: u64,
+        fees: Fees,
+        swap_curve: SwapCurve,
+        accounts: &[AccountInfo],
+    ) -> ProgramResult {
+
         Ok(())
     }
 
@@ -996,8 +1008,6 @@ impl Processor {
         match instruction {
             SwapInstruction::Initialize(Initialize {
                 nonce,
-                fees,
-                swap_curve,
             }) => {
                 msg!("Instruction: Init");
                 Self::process_initialize(
@@ -1069,6 +1079,24 @@ impl Processor {
                     program_id,
                     destination_token_amount,
                     maximum_pool_token_amount,
+                    accounts,
+                )
+            }
+            SwapInstruction::SetGlobalStateInstruction(SetGlobalState {
+                owner,
+                fee_owner,
+                initial_supply,
+                fees,
+                swap_curve,
+            }) => {
+                msg!("Instruction: SetGlobalStateInstruction");
+                Self::process_set_global_state(
+                    program_id,
+                    &owner,
+                    &fee_owner,
+                    initial_supply,
+                    fees,
+                    swap_curve,
                     accounts,
                 )
             }

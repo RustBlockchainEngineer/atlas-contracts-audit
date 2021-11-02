@@ -23,12 +23,31 @@ use arbitrary::Arbitrary;
 pub struct Initialize {
     /// nonce used to create valid program address
     pub nonce: u8,
-    /// all swap fees
-    pub fees: Fees,
-    /// swap curve info for pool, including CurveType and anything
-    /// else that may be required
-    pub swap_curve: SwapCurve,
 }
+
+
+/// Set Global State data
+#[repr(C)]
+#[derive(Debug, PartialEq)]
+pub struct SetGlobalState {
+
+    /// program owner address to update all
+    pub owner: Pubkey,
+
+    /// Fee owner address
+    pub fee_owner: Pubkey,
+
+    /// initial lp supply
+    pub initial_supply: u64,
+
+    ///Fee ratio
+    pub fees: Fees,
+
+    ///Curve Type to swap
+    pub swap_curve: SwapCurve,
+
+}
+
 
 /// Swap instruction data
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
@@ -188,30 +207,32 @@ pub enum SwapInstruction {
     ///   8. `[writable]` Fee account, to receive withdrawal fees
     ///   9. '[]` Token program id
     WithdrawSingleTokenTypeExactAmountOut(WithdrawSingleTokenTypeExactAmountOut),
+
+    ///   Set global program state
+    ///
+    ///   0. `[writable]` program state account
+    ///   1. `[]` owner of  this contract
+    ///   2. `[]` owner address to update.
+    ///   3. `[]` fee owner address to update.
+    ///   4. `[]` initial supply
+    ///   5. `[]` fees
+    ///   6. `[]` swap curve.
+    SetGlobalStateInstruction(SetGlobalState),
+
 }
 
 impl SwapInstruction {
     /// Unpacks a byte buffer into a [SwapInstruction](enum.SwapInstruction.html).
     pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
-        msg!("unpack function ");
         let (&tag, rest) = input.split_first().ok_or(SwapError::InvalidInstruction)?;
-        msg!("tag number: {}", tag);
         Ok(match tag {
             0 => {
                 let (&nonce, rest) = rest.split_first().ok_or(SwapError::InvalidInstruction)?;
-                msg!("rest.len(): {}", rest.len());
-                msg!("Fees::LEN: {}", Fees::LEN);
-                if rest.len() >= Fees::LEN {
-                    let (fees, rest) = rest.split_at(Fees::LEN);
-                    let fees = Fees::unpack_unchecked(fees)?;
-                    let swap_curve = SwapCurve::unpack_unchecked(rest)?;
+                if rest.len() == 1 {
                     Self::Initialize(Initialize {
                         nonce,
-                        fees,
-                        swap_curve,
                     })
                 } else {
-                    msg!("my error message (initialize)");
                     return Err(SwapError::InvalidInstruction.into());
                 }
             }
@@ -259,6 +280,28 @@ impl SwapInstruction {
                     maximum_pool_token_amount,
                 })
             }
+            6 => {// Upgrade Program State
+                let (owner_vec, rest) = rest.split_at(32);
+                let owner = Pubkey::new(owner_vec);
+                let (fee_owner_vec, rest) = rest.split_at(32);
+                let fee_owner = Pubkey::new(fee_owner_vec);
+
+                let (initial_supply, rest) = Self::unpack_u64(rest)?;
+                if rest.len() >= Fees::LEN {
+                    let (fees, rest) = rest.split_at(Fees::LEN);
+                    let fees = Fees::unpack_unchecked(fees)?;
+                    let swap_curve = SwapCurve::unpack_unchecked(rest)?;
+                    Self::SetGlobalStateInstruction(SetGlobalState {
+                        owner,
+                        fee_owner,
+                        initial_supply,
+                        fees,
+                        swap_curve,
+                    })
+                } else {
+                    return Err(SwapError::InvalidInstruction.into());
+                }
+            }
             _ => return Err(SwapError::InvalidInstruction.into()),
         })
     }
@@ -283,17 +326,9 @@ impl SwapInstruction {
         match &*self {
             Self::Initialize(Initialize {
                 nonce,
-                fees,
-                swap_curve,
             }) => {
                 buf.push(0);
                 buf.push(*nonce);
-                let mut fees_slice = [0u8; Fees::LEN];
-                Pack::pack_into_slice(fees, &mut fees_slice[..]);
-                buf.extend_from_slice(&fees_slice);
-                let mut swap_curve_slice = [0u8; SwapCurve::LEN];
-                Pack::pack_into_slice(swap_curve, &mut swap_curve_slice[..]);
-                buf.extend_from_slice(&swap_curve_slice);
             }
             Self::Swap(Swap {
                 amount_in,
@@ -341,6 +376,24 @@ impl SwapInstruction {
                 buf.extend_from_slice(&destination_token_amount.to_le_bytes());
                 buf.extend_from_slice(&maximum_pool_token_amount.to_le_bytes());
             }
+            Self::SetGlobalStateInstruction(SetGlobalState {
+                owner,
+                fee_owner,
+                initial_supply,
+                fees,
+                swap_curve,
+            }) => {
+                buf.push(6);
+                buf.extend_from_slice(owner.as_ref());
+                buf.extend_from_slice(fee_owner.as_ref());
+                buf.extend_from_slice(&initial_supply.to_le_bytes());
+                let mut fees_slice = [0u8; Fees::LEN];
+                Pack::pack_into_slice(fees, &mut fees_slice[..]);
+                buf.extend_from_slice(&fees_slice);
+                let mut swap_curve_slice = [0u8; SwapCurve::LEN];
+                Pack::pack_into_slice(swap_curve, &mut swap_curve_slice[..]);
+                buf.extend_from_slice(&swap_curve_slice);
+            }
         }
         buf
     }
@@ -363,8 +416,6 @@ pub fn initialize(
 ) -> Result<Instruction, ProgramError> {
     let init_data = SwapInstruction::Initialize(Initialize {
         nonce,
-        fees,
-        swap_curve,
     });
     let data = init_data.pack();
 
@@ -567,6 +618,38 @@ pub fn swap(
     if let Some(host_fee_pubkey) = host_fee_pubkey {
         accounts.push(AccountMeta::new(*host_fee_pubkey, false));
     }
+
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data,
+    })
+}
+
+/// Creates an 'SetGlobalStateInstruction' instruction.
+pub fn set_global_state(
+    program_id: &Pubkey,
+    state_account_pubkey: &Pubkey,
+    current_owner_pubkey: &Pubkey,
+    owner_pubkey: &Pubkey,
+    fee_owner_pubkey: &Pubkey,
+    initial_supply: u64,
+    fees: Fees,
+    swap_curve: SwapCurve,
+) -> Result<Instruction, ProgramError> {
+    let init_data = SwapInstruction::SetGlobalStateInstruction(SetGlobalState {
+        owner:*owner_pubkey,
+        fee_owner:*fee_owner_pubkey,
+        initial_supply,
+        fees,
+        swap_curve
+    });
+    let data = init_data.pack();
+
+    let accounts = vec![
+        AccountMeta::new(*state_account_pubkey, false),
+        AccountMeta::new_readonly(*current_owner_pubkey, true),
+    ];
 
     Ok(Instruction {
         program_id: *program_id,

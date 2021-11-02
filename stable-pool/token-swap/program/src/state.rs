@@ -31,14 +31,6 @@ pub trait SwapState {
     fn token_a_mint(&self) -> &Pubkey;
     /// Address of token B mint
     fn token_b_mint(&self) -> &Pubkey;
-
-    /// Address of pool fee account
-    fn pool_fee_account(&self) -> &Pubkey;
-
-    /// Fees associated with swap
-    fn fees(&self) -> &Fees;
-    /// Curve associated with swap
-    fn swap_curve(&self) -> &SwapCurve;
 }
 
 
@@ -117,16 +109,6 @@ pub struct SwapV1 {
     pub token_a_mint: Pubkey,
     /// Mint information for token B
     pub token_b_mint: Pubkey,
-
-    /// Pool token account to receive trading and / or withdrawal fees
-    pub pool_fee_account: Pubkey,
-
-    /// All fee information
-    pub fees: Fees,
-
-    /// Swap curve parameters, to be unpacked and used by the SwapCurve, which
-    /// calculates swaps, deposits, and withdrawals
-    pub swap_curve: SwapCurve,
 }
 
 impl SwapState for SwapV1 {
@@ -162,17 +144,6 @@ impl SwapState for SwapV1 {
         &self.token_b_mint
     }
 
-    fn pool_fee_account(&self) -> &Pubkey {
-        &self.pool_fee_account
-    }
-
-    fn fees(&self) -> &Fees {
-        &self.fees
-    }
-
-    fn swap_curve(&self) -> &SwapCurve {
-        &self.swap_curve
-    }
 }
 
 impl Sealed for SwapV1 {}
@@ -183,7 +154,7 @@ impl IsInitialized for SwapV1 {
 }
 
 impl Pack for SwapV1 {
-    const LEN: usize = 323;
+    const LEN: usize = 194;
 
     fn pack_into_slice(&self, output: &mut [u8]) {
         let output = array_mut_ref![output, 0, SwapV1::LEN];
@@ -196,10 +167,7 @@ impl Pack for SwapV1 {
             pool_mint,
             token_a_mint,
             token_b_mint,
-            pool_fee_account,
-            fees,
-            swap_curve,
-        ) = mut_array_refs![output, 1, 1, 32, 32, 32, 32, 32, 32, 32, 64, 33];
+        ) = mut_array_refs![output, 1, 1, 32, 32, 32, 32, 32, 32];
         is_initialized[0] = self.is_initialized as u8;
         nonce[0] = self.nonce;
         token_program_id.copy_from_slice(self.token_program_id.as_ref());
@@ -208,9 +176,6 @@ impl Pack for SwapV1 {
         pool_mint.copy_from_slice(self.pool_mint.as_ref());
         token_a_mint.copy_from_slice(self.token_a_mint.as_ref());
         token_b_mint.copy_from_slice(self.token_b_mint.as_ref());
-        pool_fee_account.copy_from_slice(self.pool_fee_account.as_ref());
-        self.fees.pack_into_slice(&mut fees[..]);
-        self.swap_curve.pack_into_slice(&mut swap_curve[..]);
     }
 
     /// Unpacks a byte buffer into a [SwapV1](struct.SwapV1.html).
@@ -229,10 +194,7 @@ impl Pack for SwapV1 {
             pool_mint,
             token_a_mint,
             token_b_mint,
-            pool_fee_account,
-            fees,
-            swap_curve,
-        ) = array_refs![input, 1, 1, 32, 32, 32, 32, 32, 32, 32, 64, 33];
+        ) = array_refs![input, 1, 1, 32, 32, 32, 32, 32, 32];
         Ok(Self {
             is_initialized: match is_initialized {
                 [0] => false,
@@ -245,10 +207,7 @@ impl Pack for SwapV1 {
             token_b: Pubkey::new_from_array(*token_b),
             pool_mint: Pubkey::new_from_array(*pool_mint),
             token_a_mint: Pubkey::new_from_array(*token_a_mint),
-            token_b_mint: Pubkey::new_from_array(*token_b_mint),
-            pool_fee_account: Pubkey::new_from_array(*pool_fee_account),
-            fees: Fees::unpack_from_slice(fees)?,
-            swap_curve: SwapCurve::unpack_from_slice(swap_curve)?,
+            token_b_mint: Pubkey::new_from_array(*token_b_mint)
         })
     }
 }
@@ -328,7 +287,6 @@ impl Pack for GlobalState{
         })
     }
 }
-
 
 impl GlobalState{
     /// is program account initialized
