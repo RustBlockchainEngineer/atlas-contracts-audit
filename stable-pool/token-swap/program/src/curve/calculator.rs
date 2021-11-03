@@ -9,7 +9,7 @@ use arbitrary::Arbitrary;
 /// "sensible" given a maximum of u128.
 /// Note that on Ethereum, Uniswap uses the geometric mean of all provided
 /// input amounts, and Balancer uses 100 * 10 ^ 18.
-pub const INITIAL_SWAP_POOL_AMOUNT: u128 = 1_000_000_000;
+pub const INITIAL_SWAP_POOL_AMOUNT: u64 = 1_000_000_000;
 
 /// Hardcode the number of token types in a pool, used to calculate the
 /// equivalent pool tokens for the owner trading fee.
@@ -98,7 +98,7 @@ pub trait CurveCalculator: Debug + DynPack {
     /// Get the supply for a new pool
     /// The default implementation is a Balancer-style fixed initial supply
     fn new_pool_supply(&self) -> u128 {
-        INITIAL_SWAP_POOL_AMOUNT
+        INITIAL_SWAP_POOL_AMOUNT as u128
     }
 
     /// Get the amount of trading tokens for the given amount of pool tokens,

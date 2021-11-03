@@ -3,8 +3,9 @@
 use crate::constraints::*;
 use crate::{
     curve::{
-        base::SwapCurve,
-        calculator::{RoundDirection, TradeDirection},
+        base::{SwapCurve, CurveType},
+        constant_product::ConstantProductCurve,
+        calculator::{RoundDirection, TradeDirection, INITIAL_SWAP_POOL_AMOUNT},
         fees::Fees,
     },
     error::SwapError,
@@ -12,7 +13,7 @@ use crate::{
         DepositAllTokenTypes, DepositSingleTokenTypeExactAmountIn, Initialize, Swap,
         SwapInstruction, WithdrawAllTokenTypes, WithdrawSingleTokenTypeExactAmountOut,SetGlobalState
     },
-    state::{SwapState, SwapV1, SwapVersion},
+    state::{SwapState, SwapV1, SwapVersion, GlobalState},
 };
 use num_traits::FromPrimitive;
 use solana_program::{
@@ -21,13 +22,16 @@ use solana_program::{
     entrypoint::ProgramResult,
     msg,
     program::invoke_signed,
+    program::invoke,
+    system_instruction,
     program_error::{PrintProgramError, ProgramError},
     program_option::COption,
     program_pack::Pack,
     pubkey::Pubkey,
+    sysvar::{rent::Rent, Sysvar},
 };
 use std::convert::TryInto;
-use std::convert::TryFrom;
+use std::str::FromStr;
 
 /// Program state handler.
 pub struct Processor {}
@@ -151,6 +155,7 @@ impl Processor {
         )
     }
 
+    /// check if pda address is correct
     pub fn check_pda(program_id:&Pubkey, key: &Pubkey, tag: &str)->Result<(), ProgramError>{
         let seeds = [
             tag.as_bytes(),
@@ -160,11 +165,13 @@ impl Processor {
         let (pda_key, _bump) = Pubkey::find_program_address(&seeds, program_id);
         if pda_key != *key {
             return Err(SwapError::InvalidPdaAddress.into());
-        }
+        } 
         else {
             Ok(())
         }
     }
+
+    /// create or allocate storage for new account
     pub fn create_or_allocate_account_raw<'a>(
         program_id: Pubkey,
         new_account_info: &AccountInfo<'a>,
@@ -222,7 +229,6 @@ impl Processor {
         token_program_info: &AccountInfo,
         user_token_a_info: Option<&AccountInfo>,
         user_token_b_info: Option<&AccountInfo>,
-        pool_fee_account_info: Option<&AccountInfo>,
     ) -> ProgramResult {
         if swap_account_info.owner != program_id {
             return Err(ProgramError::IncorrectProgramId);
@@ -254,14 +260,10 @@ impl Processor {
                 return Err(SwapError::InvalidInput.into());
             }
         }
-        if let Some(pool_fee_account_info) = pool_fee_account_info {
-            if *pool_fee_account_info.key != *token_swap.pool_fee_account() {
-                return Err(SwapError::IncorrectFeeAccount.into());
-            }
-        }
         Ok(())
     }
     
+    /// processor for Global State
     pub fn process_set_global_state(
         program_id: &Pubkey,
         owner: &Pubkey,
@@ -303,7 +305,7 @@ impl Processor {
         let (_pda_key, bump) = Pubkey::find_program_address(&seeds, program_id);
         
         if global_state_info.data_is_empty(){
-            let size = ProgramState::get_packed_len();
+            let size = GlobalState::get_packed_len();
 
             Self::create_or_allocate_account_raw(
                 *program_id,
@@ -320,31 +322,30 @@ impl Processor {
             )?;
         }
 
-        let mut program_state = GlobalState::unpack_from_slice(&global_state_info.data.borrow())?;
+        let mut global_state = GlobalState::unpack_from_slice(&global_state_info.data.borrow())?;
 
-        if program_state.is_initialized == false
+        if global_state.is_initialized == false
         {
-            program_state.state_owner = Pubkey::from_str(INITIAL_STATE_OWNER).map_err(|_| SwapError::InvalidStateOwner)?;
-            program_state.is_initialized = true;
-            program_state.fees = Fees {
-                fixed_fee_numerator: INITIAL_FEES.fixed_fee_numerator,
-                return_fee_numerator: INITIAL_FEES.return_fee_numerator,
-                fee_denominator: INITIAL_FEES.fee_denominator,
+            global_state.owner = Pubkey::from_str(INITIAL_PROGRAM_OWNER).map_err(|_| SwapError::InvalidProgramOwner)?;
+            global_state.is_initialized = true;
+            global_state.fees = Fees {
+                trade_fee_numerator: INITIAL_FEES.trade_fee_numerator,
+                trade_fee_denominator: INITIAL_FEES.trade_fee_denominator,
             };
-            program_state.fee_owner = Pubkey::from_str(INITIAL_FEE_OWNER_KEY).map_err(|_| SwapError::IncorrectFeeAccount)?;
-            program_state.initial_supply = INITIAL_SWAP_POOL_AMOUNT;
-            program_state.swap_curve = SwapCurve {
+            global_state.fee_owner = Pubkey::from_str(INITIAL_FEE_OWNER_KEY).map_err(|_| SwapError::IncorrectFeeAccount)?;
+            global_state.initial_supply = INITIAL_SWAP_POOL_AMOUNT;
+            global_state.swap_curve = SwapCurve {
                     curve_type: CurveType::ConstantProduct,
                     calculator: Box::new(
                         ConstantProductCurve{}
                     )
                 };
-            program_state.pack_into_slice(&mut &mut global_state_info.data.borrow_mut()[..]);
+            global_state.pack_into_slice(&mut &mut global_state_info.data.borrow_mut()[..]);
         }
         
-        if program_state.state_owner != *current_owner_info.key
+        if global_state.owner != *current_owner_info.key
         {
-            return Err(SwapError::InvalidStateOwner.into());
+            return Err(SwapError::InvalidProgramOwner.into());
         }
 
         SWAP_CONSTRAINTS.validate_curve(&swap_curve)?;
@@ -354,11 +355,11 @@ impl Processor {
         swap_curve.calculator.validate()?;
 
         //Save the program state
-        let obj = ProgramState{
+        let obj = GlobalState{
             is_initialized:true,
             initial_supply: initial_supply,
-            state_owner: *new_state_owner_info.key,
-            fee_owner: *fee_owner_info.key,
+            owner: *owner,
+            fee_owner: *fee_owner,
             fees,
             swap_curve,
         };
@@ -370,14 +371,12 @@ impl Processor {
     pub fn process_initialize(
         program_id: &Pubkey,
         nonce: u8,
-        fees: Fees,
-        swap_curve: SwapCurve,
         accounts: &[AccountInfo],
-        swap_constraints: &Option<SwapConstraints>,
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
         let swap_info = next_account_info(account_info_iter)?;
         let authority_info = next_account_info(account_info_iter)?;
+        let gloabal_state_info = next_account_info(account_info_iter)?;
         let token_a_info = next_account_info(account_info_iter)?;
         let token_b_info = next_account_info(account_info_iter)?;
         let pool_mint_info = next_account_info(account_info_iter)?;
@@ -393,6 +392,15 @@ impl Processor {
         if *authority_info.key != Self::authority_id(program_id, swap_info.key, nonce)? {
             return Err(SwapError::InvalidProgramAddress.into());
         }
+
+        Self::check_pda(program_id, gloabal_state_info.key, SWAP_TAG)?;
+        
+        let state = GlobalState::unpack_from_slice(&gloabal_state_info.data.borrow())?;
+        if state.is_initialized() == false
+        {
+            return Err(SwapError::NotInitializedState.into());
+        }
+
         let token_a = Self::unpack_token_account(token_a_info, &token_program_id)?;
         let token_b = Self::unpack_token_account(token_b_info, &token_program_id)?;
         let fee_account = Self::unpack_token_account(fee_account_info, &token_program_id)?;
@@ -418,9 +426,10 @@ impl Processor {
             return Err(SwapError::RepeatedMint.into());
         }
         
-        swap_curve
+        state.swap_curve()
             .calculator
             .validate_supply(token_a.amount, token_b.amount)?;
+
         if token_a.delegate.is_some() {
             return Err(SwapError::InvalidDelegate.into());
         }
@@ -455,21 +464,7 @@ impl Processor {
             return Err(SwapError::IncorrectPoolMint.into());
         }
 
-        if let Some(swap_constraints) = swap_constraints {
-            let owner_key = swap_constraints
-                .owner_key
-                .parse::<Pubkey>()
-                .map_err(|_| SwapError::InvalidOwner)?;
-            if fee_account.owner != owner_key {
-                return Err(SwapError::InvalidOwner.into());
-            }
-            swap_constraints.validate_curve(&swap_curve)?;
-            swap_constraints.validate_fees(&fees)?;
-        }
-        fees.validate()?;
-        swap_curve.calculator.validate()?;
-                
-        let initial_amount = swap_curve.calculator.new_pool_supply();
+        let initial_amount = state.initial_supply();
 
         Self::token_mint_to(
             swap_info.key,
@@ -478,7 +473,7 @@ impl Processor {
             destination_info.clone(),
             authority_info.clone(),
             nonce,
-            to_u64(initial_amount)?,
+            initial_amount,
         )?;
 
         let obj = SwapVersion::SwapV1(SwapV1 {
@@ -490,9 +485,6 @@ impl Processor {
             pool_mint: *pool_mint_info.key,
             token_a_mint: token_a.mint,
             token_b_mint: token_b.mint,
-            pool_fee_account: *fee_account_info.key,
-            fees,
-            swap_curve,
         });
         SwapVersion::pack(obj, &mut swap_info.data.borrow_mut())?;
         Ok(())
@@ -513,6 +505,8 @@ impl Processor {
         let authority_info = next_account_info(account_info_iter)?;
         // get user transfer autority info
         let user_transfer_authority_info = next_account_info(account_info_iter)?;
+
+        let state_info = next_account_info(account_info_iter)?;
         // get source info
         let source_info = next_account_info(account_info_iter)?;
         // get swap source info
@@ -531,6 +525,15 @@ impl Processor {
         if swap_info.owner != program_id {
             return Err(ProgramError::IncorrectProgramId);
         }
+
+        Self::check_pda(program_id, state_info.key, SWAP_TAG)?;
+        
+        let state = GlobalState::unpack_from_slice(&state_info.data.borrow())?;
+        if state.is_initialized() == false
+        {
+            return Err(SwapError::NotInitializedState.into());
+        }
+
         // get token_swap by swap_info.data
         let token_swap = SwapVersion::unpack(&swap_info.data.borrow())?;
         // if autority_info.key is not authority id then return invalid program address error
@@ -568,7 +571,7 @@ impl Processor {
         if *pool_mint_info.key != *token_swap.pool_mint() {
             return Err(SwapError::IncorrectPoolMint.into());
         }
-        if *pool_fee_account_info.key != *token_swap.pool_fee_account() {
+        if *pool_fee_account_info.key != *state.fee_owner() {
             return Err(SwapError::IncorrectFeeAccount.into());
         }
         if *token_program_info.key != *token_swap.token_program_id() {
@@ -586,14 +589,14 @@ impl Processor {
         } else {
             TradeDirection::BtoA
         };
-        let result = token_swap
+        let result = state
             .swap_curve()
             .swap(
                 to_u128(amount_in)?,
                 to_u128(source_account.amount)?,
                 to_u128(dest_account.amount)?,
                 trade_direction,
-                token_swap.fees(),
+                state.fees(),
             )
             .ok_or(SwapError::ZeroTradingTokens)?;
         if result.dest_amount < to_u128(minimum_amount_out)? {
@@ -670,6 +673,7 @@ impl Processor {
         let account_info_iter = &mut accounts.iter();
         let swap_info = next_account_info(account_info_iter)?;
         let authority_info = next_account_info(account_info_iter)?;
+        let state_info = next_account_info(account_info_iter)?;
         let user_transfer_authority_info = next_account_info(account_info_iter)?;
         let source_a_info = next_account_info(account_info_iter)?;
         let source_b_info = next_account_info(account_info_iter)?;
@@ -680,7 +684,15 @@ impl Processor {
         let token_program_info = next_account_info(account_info_iter)?;
 
         let token_swap = SwapVersion::unpack(&swap_info.data.borrow())?;
-        let calculator = &token_swap.swap_curve().calculator;
+
+        Self::check_pda(program_id, state_info.key, SWAP_TAG)?;
+        let state = GlobalState::unpack_from_slice(&state_info.data.borrow())?;
+        if state.is_initialized() == false
+        {
+            return Err(SwapError::NotInitializedState.into());
+        }
+
+        let calculator = &state.swap_curve().calculator;
         if !calculator.allows_deposits() {
             return Err(SwapError::UnsupportedCurveOperation.into());
         }
@@ -695,7 +707,6 @@ impl Processor {
             token_program_info,
             Some(source_a_info),
             Some(source_b_info),
-            None,
         )?;
         let token_a = Self::unpack_token_account(token_a_info, token_swap.token_program_id())?;
         let token_b = Self::unpack_token_account(token_b_info, token_swap.token_program_id())?;
@@ -761,6 +772,7 @@ impl Processor {
         let account_info_iter = &mut accounts.iter();
         let swap_info = next_account_info(account_info_iter)?;
         let authority_info = next_account_info(account_info_iter)?;
+        let state_info = next_account_info(account_info_iter)?;
         let user_transfer_authority_info = next_account_info(account_info_iter)?;
         let pool_mint_info = next_account_info(account_info_iter)?;
         let source_info = next_account_info(account_info_iter)?;
@@ -772,6 +784,14 @@ impl Processor {
         let token_program_info = next_account_info(account_info_iter)?;
 
         let token_swap = SwapVersion::unpack(&swap_info.data.borrow())?;
+
+        Self::check_pda(program_id, state_info.key, SWAP_TAG)?;
+        let state = GlobalState::unpack_from_slice(&state_info.data.borrow())?;
+        if state.is_initialized() == false
+        {
+            return Err(SwapError::NotInitializedState.into());
+        }
+
         Self::check_accounts(
             token_swap.as_ref(),
             program_id,
@@ -783,14 +803,13 @@ impl Processor {
             token_program_info,
             Some(dest_token_a_info),
             Some(dest_token_b_info),
-            Some(pool_fee_account_info),
         )?;
 
         let token_a = Self::unpack_token_account(token_a_info, token_swap.token_program_id())?;
         let token_b = Self::unpack_token_account(token_b_info, token_swap.token_program_id())?;
         let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
 
-        let calculator = &token_swap.swap_curve().calculator;
+        let calculator = &state.swap_curve().calculator;
 
         // let withdraw_fee: u128 = if *pool_fee_account_info.key == *source_info.key {
         //     // withdrawing from the fee account, don't assess withdraw fee
@@ -894,6 +913,7 @@ impl Processor {
         let account_info_iter = &mut accounts.iter();
         let swap_info = next_account_info(account_info_iter)?;
         let authority_info = next_account_info(account_info_iter)?;
+        let state_info = next_account_info(account_info_iter)?;
         let user_transfer_authority_info = next_account_info(account_info_iter)?;
         let source_info = next_account_info(account_info_iter)?;
         let swap_token_a_info = next_account_info(account_info_iter)?;
@@ -903,6 +923,14 @@ impl Processor {
         let token_program_info = next_account_info(account_info_iter)?;
 
         let token_swap = SwapVersion::unpack(&swap_info.data.borrow())?;
+
+        Self::check_pda(program_id, state_info.key, SWAP_TAG)?;
+        let state = GlobalState::unpack_from_slice(&state_info.data.borrow())?;
+        if state.is_initialized() == false
+        {
+            return Err(SwapError::NotInitializedState.into());
+        }
+
         let source_account =
             Self::unpack_token_account(source_info, token_swap.token_program_id())?;
         let swap_token_a =
@@ -934,13 +962,12 @@ impl Processor {
             token_program_info,
             source_a_info,
             source_b_info,
-            None,
         )?;
 
         let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
         let pool_mint_supply = to_u128(pool_mint.supply)?;
         let pool_token_amount = if pool_mint_supply > 0 {
-            token_swap
+            state
                 .swap_curve()
                 .deposit_single_token_type(
                     to_u128(source_token_amount)?,
@@ -948,11 +975,11 @@ impl Processor {
                     to_u128(swap_token_b.amount)?,
                     pool_mint_supply,
                     trade_direction,
-                    token_swap.fees(),
+                    state.fees(),
                 )
                 .ok_or(SwapError::ZeroTradingTokens)?
         } else {
-            token_swap.swap_curve().calculator.new_pool_supply()
+            state.swap_curve().calculator.new_pool_supply()
         };
 
         let pool_token_amount = to_u64(pool_token_amount)?;
@@ -1010,6 +1037,7 @@ impl Processor {
         let account_info_iter = &mut accounts.iter();
         let swap_info = next_account_info(account_info_iter)?;
         let authority_info = next_account_info(account_info_iter)?;
+        let state_info = next_account_info(account_info_iter)?;
         let user_transfer_authority_info = next_account_info(account_info_iter)?;
         let pool_mint_info = next_account_info(account_info_iter)?;
         let source_info = next_account_info(account_info_iter)?;
@@ -1020,6 +1048,14 @@ impl Processor {
         let token_program_info = next_account_info(account_info_iter)?;
 
         let token_swap = SwapVersion::unpack(&swap_info.data.borrow())?;
+
+        Self::check_pda(program_id, state_info.key, SWAP_TAG)?;
+        let state = GlobalState::unpack_from_slice(&state_info.data.borrow())?;
+        if state.is_initialized() == false
+        {
+            return Err(SwapError::NotInitializedState.into());
+        }
+
         let destination_account =
             Self::unpack_token_account(destination_info, token_swap.token_program_id())?;
         let swap_token_a =
@@ -1050,7 +1086,6 @@ impl Processor {
             token_program_info,
             destination_a_info,
             destination_b_info,
-            Some(pool_fee_account_info),
         )?;
 
         let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
@@ -1058,7 +1093,7 @@ impl Processor {
         let swap_token_a_amount = to_u128(swap_token_a.amount)?;
         let swap_token_b_amount = to_u128(swap_token_b.amount)?;
 
-        let burn_pool_token_amount = token_swap
+        let burn_pool_token_amount = state
             .swap_curve()
             .withdraw_single_token_type_exact_out(
                 to_u128(destination_token_amount)?,
@@ -1066,7 +1101,7 @@ impl Processor {
                 swap_token_b_amount,
                 pool_mint_supply,
                 trade_direction,
-                token_swap.fees(),
+                state.fees(),
             )
             .ok_or(SwapError::ZeroTradingTokens)?;
 
@@ -1143,7 +1178,7 @@ impl Processor {
 
     /// Processes an [Instruction](enum.Instruction.html).
     pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], input: &[u8]) -> ProgramResult {
-        Self::process_with_constraints(program_id, accounts, input, &SWAP_CONSTRAINTS)
+        Self::process_with_constraints(program_id, accounts, input)
     }
 
     /// Processes an instruction given extra constraint
@@ -1151,7 +1186,6 @@ impl Processor {
         program_id: &Pubkey,
         accounts: &[AccountInfo],
         input: &[u8],
-        swap_constraints: &Option<SwapConstraints>,
     ) -> ProgramResult {
         msg!("unpack start");
         let instruction = SwapInstruction::unpack(input)?;
@@ -1164,10 +1198,7 @@ impl Processor {
                 Self::process_initialize(
                     program_id,
                     nonce,
-                    fees,
-                    swap_curve,
                     accounts,
-                    swap_constraints,
                 )
             }
             SwapInstruction::Swap(Swap {
@@ -1321,6 +1352,28 @@ impl PrintProgramError for SwapError {
             }
             SwapError::MismatchDecimalValidation => {
                 msg!("The decimal validation error.(Decimal must be 8)")
+            }
+
+            SwapError::InvalidPdaAddress => {
+                msg!("invalid program derived address")
+            }
+            SwapError::InvalidAllocateSpaceForAccount => {
+                msg!("Can't allocate space for the account")
+            }
+            SwapError::InvalidSigner => {
+                msg!("owner should be the signer")
+            }
+            SwapError::InvalidSystemProgramId => {
+                msg!("Invalid SystemProgram Id")
+            }
+            SwapError::InvalidRentSysvarId => {
+                msg!("Invalid Rent Sysvar Id")
+            }
+            SwapError::InvalidProgramOwner => {
+                msg!("Invalid owner of the contract")
+            }
+            SwapError::NotInitializedState => {
+                msg!("Program State should be initialized before creating pool")
             }
         }
     }
