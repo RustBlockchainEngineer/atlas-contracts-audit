@@ -720,16 +720,6 @@ impl Processor {
             to_u128(maximum_token_b_amount)?
         ).ok_or(SwapError::ZeroTradingTokens)?;
 
-        msg!("\n");
-        msg!("----  token_a lp amount : {:?} ----", token_a.amount);
-        msg!("----  token_b lp amount : {:?} ----", token_b.amount);
-        msg!("----  input a amount : {:?} ----", maximum_token_a_amount);
-        msg!("----  input b amount : {:?} ----", maximum_token_b_amount);
-        msg!("----  current supply : {:?} ----", pool_mint.supply);
-        msg!("----  temp supply amount : {:?} ----", pool_amount);
-
-        msg!("\n");
- 
         Self::token_transfer(
             swap_info.key,
             token_program_info.clone(),
@@ -780,7 +770,6 @@ impl Processor {
         let token_b_info = next_account_info(account_info_iter)?;
         let dest_token_a_info = next_account_info(account_info_iter)?;
         let dest_token_b_info = next_account_info(account_info_iter)?;
-        let pool_fee_account_info = next_account_info(account_info_iter)?;
         let token_program_info = next_account_info(account_info_iter)?;
 
         let token_swap = SwapVersion::unpack(&swap_info.data.borrow())?;
@@ -811,26 +800,7 @@ impl Processor {
 
         let calculator = &state.swap_curve().calculator;
 
-        // let withdraw_fee: u128 = if *pool_fee_account_info.key == *source_info.key {
-        //     // withdrawing from the fee account, don't assess withdraw fee
-        //     0
-        // } else {
-        //     token_swap
-        //         .fees()
-        //         .owner_withdraw_fee(to_u128(pool_token_amount)?)
-        //         .ok_or(SwapError::FeeCalculationFailure)?
-        // };
         let pool_token_amount = to_u128(pool_token_amount)?;
-        //     .checked_sub(withdraw_fee)
-        //     .ok_or(SwapError::CalculationFailure)?;
-        msg!("\n ---- withdraw token ----");
-        msg!(" pool token amount : {} ", pool_token_amount);
-        msg!(" token a amount : {} ", token_a.amount);
-        msg!(" token b amount : {} ", token_b.amount);
-        msg!(" minimum_token_a_amount : {} ", minimum_token_a_amount);
-        msg!(" minimum_token_b_amount : {} ", minimum_token_b_amount);
-        msg!("\n");
-
         let results = calculator
             .pool_tokens_to_trading_tokens(
                 pool_token_amount,
@@ -857,17 +827,6 @@ impl Processor {
             return Err(SwapError::ZeroTradingTokens.into());
         }
 
-        // if withdraw_fee > 0 {
-        //     Self::token_transfer(
-        //         swap_info.key,
-        //         token_program_info.clone(),
-        //         source_info.clone(),
-        //         pool_fee_account_info.clone(),
-        //         user_transfer_authority_info.clone(),
-        //         token_swap.nonce(),
-        //         to_u64(withdraw_fee)?,
-        //     )?;
-        // }
         Self::token_burn(
             swap_info.key,
             token_program_info.clone(),
@@ -903,293 +862,9 @@ impl Processor {
         Ok(())
     }
 
-    /// Processes DepositSingleTokenTypeExactAmountIn
-    pub fn process_deposit_single_token_type_exact_amount_in(
-        program_id: &Pubkey,
-        source_token_amount: u64,
-        minimum_pool_token_amount: u64,
-        accounts: &[AccountInfo],
-    ) -> ProgramResult {
-        let account_info_iter = &mut accounts.iter();
-        let swap_info = next_account_info(account_info_iter)?;
-        let authority_info = next_account_info(account_info_iter)?;
-        let state_info = next_account_info(account_info_iter)?;
-        let user_transfer_authority_info = next_account_info(account_info_iter)?;
-        let source_info = next_account_info(account_info_iter)?;
-        let swap_token_a_info = next_account_info(account_info_iter)?;
-        let swap_token_b_info = next_account_info(account_info_iter)?;
-        let pool_mint_info = next_account_info(account_info_iter)?;
-        let destination_info = next_account_info(account_info_iter)?;
-        let token_program_info = next_account_info(account_info_iter)?;
-
-        let token_swap = SwapVersion::unpack(&swap_info.data.borrow())?;
-
-        Self::check_pda(program_id, state_info.key, SWAP_TAG)?;
-        let state = GlobalState::unpack_from_slice(&state_info.data.borrow())?;
-        if state.is_initialized() == false
-        {
-            return Err(SwapError::NotInitializedState.into());
-        }
-
-        let source_account =
-            Self::unpack_token_account(source_info, token_swap.token_program_id())?;
-        let swap_token_a =
-            Self::unpack_token_account(swap_token_a_info, token_swap.token_program_id())?;
-        let swap_token_b =
-            Self::unpack_token_account(swap_token_b_info, token_swap.token_program_id())?;
-
-        let trade_direction = if source_account.mint == swap_token_a.mint {
-            TradeDirection::AtoB
-        } else if source_account.mint == swap_token_b.mint {
-            TradeDirection::BtoA
-        } else {
-            return Err(SwapError::IncorrectSwapAccount.into());
-        };
-
-        let (source_a_info, source_b_info) = match trade_direction {
-            TradeDirection::AtoB => (Some(source_info), None),
-            TradeDirection::BtoA => (None, Some(source_info)),
-        };
-
-        Self::check_accounts(
-            token_swap.as_ref(),
-            program_id,
-            swap_info,
-            authority_info,
-            swap_token_a_info,
-            swap_token_b_info,
-            pool_mint_info,
-            token_program_info,
-            source_a_info,
-            source_b_info,
-        )?;
-
-        let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
-        let pool_mint_supply = to_u128(pool_mint.supply)?;
-        let pool_token_amount = if pool_mint_supply > 0 {
-            state
-                .swap_curve()
-                .deposit_single_token_type(
-                    to_u128(source_token_amount)?,
-                    to_u128(swap_token_a.amount)?,
-                    to_u128(swap_token_b.amount)?,
-                    pool_mint_supply,
-                    trade_direction,
-                    state.fees(),
-                )
-                .ok_or(SwapError::ZeroTradingTokens)?
-        } else {
-            state.swap_curve().calculator.new_pool_supply()
-        };
-
-        let pool_token_amount = to_u64(pool_token_amount)?;
-        if pool_token_amount < minimum_pool_token_amount {
-            return Err(SwapError::ExceededSlippage.into());
-        }
-        if pool_token_amount == 0 {
-            return Err(SwapError::ZeroTradingTokens.into());
-        }
-
-        match trade_direction {
-            TradeDirection::AtoB => {
-                Self::token_transfer(
-                    swap_info.key,
-                    token_program_info.clone(),
-                    source_info.clone(),
-                    swap_token_a_info.clone(),
-                    user_transfer_authority_info.clone(),
-                    token_swap.nonce(),
-                    source_token_amount,
-                )?;
-            }
-            TradeDirection::BtoA => {
-                Self::token_transfer(
-                    swap_info.key,
-                    token_program_info.clone(),
-                    source_info.clone(),
-                    swap_token_b_info.clone(),
-                    user_transfer_authority_info.clone(),
-                    token_swap.nonce(),
-                    source_token_amount,
-                )?;
-            }
-        }
-        Self::token_mint_to(
-            swap_info.key,
-            token_program_info.clone(),
-            pool_mint_info.clone(),
-            destination_info.clone(),
-            authority_info.clone(),
-            token_swap.nonce(),
-            pool_token_amount,
-        )?;
-
-        Ok(())
-    }
-
-    /// Processes a [WithdrawSingleTokenTypeExactAmountOut](enum.Instruction.html).
-    pub fn process_withdraw_single_token_type_exact_amount_out(
-        program_id: &Pubkey,
-        destination_token_amount: u64,
-        maximum_pool_token_amount: u64,
-        accounts: &[AccountInfo],
-    ) -> ProgramResult {
-        let account_info_iter = &mut accounts.iter();
-        let swap_info = next_account_info(account_info_iter)?;
-        let authority_info = next_account_info(account_info_iter)?;
-        let state_info = next_account_info(account_info_iter)?;
-        let user_transfer_authority_info = next_account_info(account_info_iter)?;
-        let pool_mint_info = next_account_info(account_info_iter)?;
-        let source_info = next_account_info(account_info_iter)?;
-        let swap_token_a_info = next_account_info(account_info_iter)?;
-        let swap_token_b_info = next_account_info(account_info_iter)?;
-        let destination_info = next_account_info(account_info_iter)?;
-        let pool_fee_account_info = next_account_info(account_info_iter)?;
-        let token_program_info = next_account_info(account_info_iter)?;
-
-        let token_swap = SwapVersion::unpack(&swap_info.data.borrow())?;
-
-        Self::check_pda(program_id, state_info.key, SWAP_TAG)?;
-        let state = GlobalState::unpack_from_slice(&state_info.data.borrow())?;
-        if state.is_initialized() == false
-        {
-            return Err(SwapError::NotInitializedState.into());
-        }
-
-        let destination_account =
-            Self::unpack_token_account(destination_info, token_swap.token_program_id())?;
-        let swap_token_a =
-            Self::unpack_token_account(swap_token_a_info, token_swap.token_program_id())?;
-        let swap_token_b =
-            Self::unpack_token_account(swap_token_b_info, token_swap.token_program_id())?;
-
-        let trade_direction = if destination_account.mint == swap_token_a.mint {
-            TradeDirection::AtoB
-        } else if destination_account.mint == swap_token_b.mint {
-            TradeDirection::BtoA
-        } else {
-            return Err(SwapError::IncorrectSwapAccount.into());
-        };
-
-        let (destination_a_info, destination_b_info) = match trade_direction {
-            TradeDirection::AtoB => (Some(destination_info), None),
-            TradeDirection::BtoA => (None, Some(destination_info)),
-        };
-        Self::check_accounts(
-            token_swap.as_ref(),
-            program_id,
-            swap_info,
-            authority_info,
-            swap_token_a_info,
-            swap_token_b_info,
-            pool_mint_info,
-            token_program_info,
-            destination_a_info,
-            destination_b_info,
-        )?;
-
-        let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
-        let pool_mint_supply = to_u128(pool_mint.supply)?;
-        let swap_token_a_amount = to_u128(swap_token_a.amount)?;
-        let swap_token_b_amount = to_u128(swap_token_b.amount)?;
-
-        let burn_pool_token_amount = state
-            .swap_curve()
-            .withdraw_single_token_type_exact_out(
-                to_u128(destination_token_amount)?,
-                swap_token_a_amount,
-                swap_token_b_amount,
-                pool_mint_supply,
-                trade_direction,
-                state.fees(),
-            )
-            .ok_or(SwapError::ZeroTradingTokens)?;
-
-        let withdraw_fee: u128 = if *pool_fee_account_info.key == *source_info.key {
-            // withdrawing from the fee account, don't assess withdraw fee
-            0
-        }
-         else {
-             0
-            // token_swap
-            //     .fees()
-            //     .owner_withdraw_fee(burn_pool_token_amount)
-            //     .ok_or(SwapError::FeeCalculationFailure)?
-        };
-        let pool_token_amount = burn_pool_token_amount
-            .checked_add(withdraw_fee)
-            .ok_or(SwapError::CalculationFailure)?;
-
-        if to_u64(pool_token_amount)? > maximum_pool_token_amount {
-            return Err(SwapError::ExceededSlippage.into());
-        }
-        if pool_token_amount == 0 {
-            return Err(SwapError::ZeroTradingTokens.into());
-        }
-
-        if withdraw_fee > 0 {
-            Self::token_transfer(
-                swap_info.key,
-                token_program_info.clone(),
-                source_info.clone(),
-                pool_fee_account_info.clone(),
-                user_transfer_authority_info.clone(),
-                token_swap.nonce(),
-                to_u64(withdraw_fee)?,
-            )?;
-        }
-        Self::token_burn(
-            swap_info.key,
-            token_program_info.clone(),
-            source_info.clone(),
-            pool_mint_info.clone(),
-            user_transfer_authority_info.clone(),
-            token_swap.nonce(),
-            to_u64(burn_pool_token_amount)?,
-        )?;
-
-        match trade_direction {
-            TradeDirection::AtoB => {
-                Self::token_transfer(
-                    swap_info.key,
-                    token_program_info.clone(),
-                    swap_token_a_info.clone(),
-                    destination_info.clone(),
-                    authority_info.clone(),
-                    token_swap.nonce(),
-                    destination_token_amount,
-                )?;
-            }
-            TradeDirection::BtoA => {
-                Self::token_transfer(
-                    swap_info.key,
-                    token_program_info.clone(),
-                    swap_token_b_info.clone(),
-                    destination_info.clone(),
-                    authority_info.clone(),
-                    token_swap.nonce(),
-                    destination_token_amount,
-                )?;
-            }
-        }
-
-        Ok(())
-    }
-
     /// Processes an [Instruction](enum.Instruction.html).
     pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], input: &[u8]) -> ProgramResult {
-        Self::process_with_constraints(program_id, accounts, input)
-    }
-
-    /// Processes an instruction given extra constraint
-    pub fn process_with_constraints(
-        program_id: &Pubkey,
-        accounts: &[AccountInfo],
-        input: &[u8],
-    ) -> ProgramResult {
-        msg!("unpack start");
         let instruction = SwapInstruction::unpack(input)?;
-        msg!("unpack end");
         match instruction {
             SwapInstruction::Initialize(Initialize {
                 nonce,
@@ -1233,34 +908,6 @@ impl Processor {
                     pool_token_amount,
                     minimum_token_a_amount,
                     minimum_token_b_amount,
-                    accounts,
-                )
-            }
-            SwapInstruction::DepositSingleTokenTypeExactAmountIn(
-                DepositSingleTokenTypeExactAmountIn {
-                    source_token_amount,
-                    minimum_pool_token_amount,
-                },
-            ) => {
-                msg!("Instruction: DepositSingleTokenTypeExactAmountIn");
-                Self::process_deposit_single_token_type_exact_amount_in(
-                    program_id,
-                    source_token_amount,
-                    minimum_pool_token_amount,
-                    accounts,
-                )
-            }
-            SwapInstruction::WithdrawSingleTokenTypeExactAmountOut(
-                WithdrawSingleTokenTypeExactAmountOut {
-                    destination_token_amount,
-                    maximum_pool_token_amount,
-                },
-            ) => {
-                msg!("Instruction: WithdrawSingleTokenTypeExactAmountOut");
-                Self::process_withdraw_single_token_type_exact_amount_out(
-                    program_id,
-                    destination_token_amount,
-                    maximum_pool_token_amount,
                     accounts,
                 )
             }
