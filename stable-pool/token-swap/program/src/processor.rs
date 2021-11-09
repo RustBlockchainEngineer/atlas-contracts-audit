@@ -665,7 +665,7 @@ impl Processor {
     /// Processes an [DepositAllTokenTypes](enum.Instruction.html).
     pub fn process_deposit_all_token_types(
         program_id: &Pubkey,
-        pool_token_amount: u64,
+        //pool_token_amount: u64,
         maximum_token_a_amount: u64,
         maximum_token_b_amount: u64,
         accounts: &[AccountInfo],
@@ -800,7 +800,12 @@ impl Processor {
 
         let calculator = &state.swap_curve().calculator;
 
-        let pool_token_amount = to_u128(pool_token_amount)?;
+        let mut pool_token_amount = to_u128(pool_token_amount)?;
+
+        //Check the minimum lp token amount
+        let max_pool_token_amount = to_u128(pool_mint.supply)?.checked_sub(MIN_LP_SUPPLY).ok_or(AmmError::CalculationFailure)?;
+        pool_token_amount = std::cmp::min(pool_token_amount, max_pool_token_amount);
+
         let results = calculator
             .pool_tokens_to_trading_tokens(
                 pool_token_amount,
@@ -884,14 +889,14 @@ impl Processor {
                 Self::process_swap(program_id, amount_in, minimum_amount_out, accounts)
             }
             SwapInstruction::DepositAllTokenTypes(DepositAllTokenTypes {
-                pool_token_amount,
+                //pool_token_amount,
                 maximum_token_a_amount,
                 maximum_token_b_amount,
             }) => {
                 msg!("Instruction: DepositAllTokenTypes");
                 Self::process_deposit_all_token_types(
                     program_id,
-                    pool_token_amount,
+                    //pool_token_amount,
                     maximum_token_a_amount,
                     maximum_token_b_amount,
                     accounts,

@@ -81,3 +81,6 @@ pub const SWAP_CONSTRAINTS:SwapConstraints = SwapConstraints {
     valid_curve_types: VALID_CURVE_TYPES,
     fees: MINIMUM_FEES,
 };
+
+//minimum lp supply
+pub const MIN_LP_SUPPLY:u128 = 100000;

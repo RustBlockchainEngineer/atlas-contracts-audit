@@ -67,7 +67,7 @@ pub struct Swap {
 pub struct DepositAllTokenTypes {
     /// Pool token amount to transfer. token_a and token_b amount are set by
     /// the current exchange rate and size of the pool
-    pub pool_token_amount: u64,
+    //pub pool_token_amount: u64,
     /// Maximum token A amount to deposit, prevents excessive slippage
     pub maximum_token_a_amount: u64,
     /// Maximum token B amount to deposit, prevents excessive slippage
@@ -219,7 +219,7 @@ impl SwapInstruction {
                 let (maximum_token_a_amount, rest) = Self::unpack_u64(rest)?;
                 let (maximum_token_b_amount, _rest) = Self::unpack_u64(rest)?;
                 Self::DepositAllTokenTypes(DepositAllTokenTypes {
-                    pool_token_amount,
+                    //pool_token_amount,
                     maximum_token_a_amount,
                     maximum_token_b_amount,
                 })
@@ -293,7 +293,7 @@ impl SwapInstruction {
                 buf.extend_from_slice(&minimum_amount_out.to_le_bytes());
             }
             Self::DepositAllTokenTypes(DepositAllTokenTypes {
-                pool_token_amount,
+                //pool_token_amount,
                 maximum_token_a_amount,
                 maximum_token_b_amount,
             }) => {
