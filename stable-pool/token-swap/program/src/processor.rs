@@ -803,7 +803,7 @@ impl Processor {
         let mut pool_token_amount = to_u128(pool_token_amount)?;
 
         //Check the minimum lp token amount
-        let max_pool_token_amount = to_u128(pool_mint.supply)?.checked_sub(MIN_LP_SUPPLY).ok_or(AmmError::CalculationFailure)?;
+        let max_pool_token_amount = to_u128(pool_mint.supply)?.checked_sub(MIN_LP_SUPPLY).ok_or(SwapError::CalculationFailure)?;
         pool_token_amount = std::cmp::min(pool_token_amount, max_pool_token_amount);
 
         let results = calculator

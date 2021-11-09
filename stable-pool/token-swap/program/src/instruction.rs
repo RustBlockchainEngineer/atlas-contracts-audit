@@ -298,7 +298,7 @@ impl SwapInstruction {
                 maximum_token_b_amount,
             }) => {
                 buf.push(2);
-                buf.extend_from_slice(&pool_token_amount.to_le_bytes());
+                // buf.extend_from_slice(&pool_token_amount.to_le_bytes());
                 buf.extend_from_slice(&maximum_token_a_amount.to_le_bytes());
                 buf.extend_from_slice(&maximum_token_b_amount.to_le_bytes());
             }

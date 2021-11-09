@@ -82,5 +82,5 @@ pub const SWAP_CONSTRAINTS:SwapConstraints = SwapConstraints {
     fees: MINIMUM_FEES,
 };
 
-//minimum lp supply
+/// minimum lp supply
 pub const MIN_LP_SUPPLY:u128 = 100000;
