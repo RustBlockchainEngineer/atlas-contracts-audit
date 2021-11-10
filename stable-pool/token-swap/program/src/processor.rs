@@ -340,7 +340,7 @@ impl Processor {
                         ConstantProductCurve{}
                     )
                 };
-            global_state.pack_into_slice(&mut &mut global_state_info.data.borrow_mut()[..]);
+            //global_state.pack_into_slice(&mut &mut global_state_info.data.borrow_mut()[..]);
         }
         
         if global_state.owner != *current_owner_info.key
