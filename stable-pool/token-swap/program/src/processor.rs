@@ -367,7 +367,6 @@ impl Processor {
         let token_a_info = next_account_info(account_info_iter)?;
         let token_b_info = next_account_info(account_info_iter)?;
         let pool_mint_info = next_account_info(account_info_iter)?;
-        let fee_account_info = next_account_info(account_info_iter)?;
         let destination_info = next_account_info(account_info_iter)?;
         let token_program_info = next_account_info(account_info_iter)?;
 
@@ -390,7 +389,6 @@ impl Processor {
 
         let token_a = Self::unpack_token_account(token_a_info, &token_program_id)?;
         let token_b = Self::unpack_token_account(token_b_info, &token_program_id)?;
-        let fee_account = Self::unpack_token_account(fee_account_info, &token_program_id)?;
         let destination = Self::unpack_token_account(destination_info, &token_program_id)?;
         let pool_mint = Self::unpack_mint(pool_mint_info, &token_program_id)?;
         if *authority_info.key != token_a.owner {
@@ -400,9 +398,6 @@ impl Processor {
             return Err(SwapError::InvalidOwner.into());
         }
         if *authority_info.key == destination.owner {
-            return Err(SwapError::InvalidOutputOwner.into());
-        }
-        if *authority_info.key == fee_account.owner {
             return Err(SwapError::InvalidOutputOwner.into());
         }
         if COption::Some(*authority_info.key) != pool_mint.mint_authority {
@@ -446,9 +441,6 @@ impl Processor {
         // fixed
         if pool_mint.decimals != state.lp_decimals() {
             return Err(SwapError::MismatchDecimalValidation.into());
-        }
-        if *pool_mint_info.key != fee_account.mint {
-            return Err(SwapError::IncorrectPoolMint.into());
         }
 
         let initial_amount = state.initial_supply();
@@ -504,8 +496,6 @@ impl Processor {
         let destination_info = next_account_info(account_info_iter)?;
         // get pool mint info
         let pool_mint_info = next_account_info(account_info_iter)?;
-        // get pool fee account info
-        let pool_fee_account_info = next_account_info(account_info_iter)?;
         // get token program info
         let token_program_info = next_account_info(account_info_iter)?;
         // if swap owner is not program_id, then return incorrect program id error
@@ -558,9 +548,6 @@ impl Processor {
         if *pool_mint_info.key != *token_swap.pool_mint() {
             return Err(SwapError::IncorrectPoolMint.into());
         }
-        if *pool_fee_account_info.key != *state.fee_owner() {
-            return Err(SwapError::IncorrectFeeAccount.into());
-        }
         if *token_program_info.key != *token_swap.token_program_id() {
             return Err(SwapError::IncorrectTokenProgramId.into());
         }
@@ -590,17 +577,6 @@ impl Processor {
             return Err(SwapError::ExceededSlippage.into());
         }
 
-        // let (swap_token_a_amount, swap_token_b_amount) = match trade_direction {
-        //     TradeDirection::AtoB => (
-        //         result.new_swap_amount,
-        //         result.dest_amount,
-        //     ),
-        //     TradeDirection::BtoA => (
-        //         result.dest_amount,
-        //         result.new_swap_amount,
-        //     ),
-        // };
-
         Self::token_transfer(
             swap_info.key,
             token_program_info.clone(),
@@ -610,18 +586,6 @@ impl Processor {
             token_swap.nonce(),
             to_u64(result.dest_amount)?,
         )?;
-
-        // let mut pool_token_amount = token_swap
-        //     .swap_curve()
-        //     .withdraw_single_token_type_exact_out(
-        //         result.owner_fee,
-        //         swap_token_a_amount,
-        //         swap_token_b_amount,
-        //         to_u128(pool_mint.supply)?,
-        //         trade_direction,
-        //         token_swap.fees(),
-        //     )
-        //     .ok_or(SwapError::FeeCalculationFailure)?;
 
         Self::token_transfer(
             swap_info.key,
