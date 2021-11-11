@@ -9,7 +9,6 @@ use solana_program::{
     program_error::ProgramError,
     program_pack::Pack,
     pubkey::Pubkey,
-    msg
 };
 use std::convert::TryInto;
 use std::mem::size_of;
@@ -39,6 +38,9 @@ pub struct SetGlobalState {
 
     /// initial lp supply
     pub initial_supply: u64,
+
+    /// lp decimals
+    pub lp_decimals: u8,
 
     ///Fee ratio
     pub fees: Fees,
@@ -215,7 +217,7 @@ impl SwapInstruction {
                 })
             }
             2 => {
-                let (pool_token_amount, rest) = Self::unpack_u64(rest)?;
+                //let (pool_token_amount, rest) = Self::unpack_u64(rest)?;
                 let (maximum_token_a_amount, rest) = Self::unpack_u64(rest)?;
                 let (maximum_token_b_amount, _rest) = Self::unpack_u64(rest)?;
                 Self::DepositAllTokenTypes(DepositAllTokenTypes {
@@ -241,6 +243,7 @@ impl SwapInstruction {
                 let fee_owner = Pubkey::new(fee_owner_vec);
 
                 let (initial_supply, rest) = Self::unpack_u64(rest)?;
+                let (&lp_decimals, rest) = rest.split_first().ok_or(SwapError::InvalidInstruction)?;
                 if rest.len() >= Fees::LEN {
                     let (fees, rest) = rest.split_at(Fees::LEN);
                     let fees = Fees::unpack_unchecked(fees)?;
@@ -249,6 +252,7 @@ impl SwapInstruction {
                         owner,
                         fee_owner,
                         initial_supply,
+                        lp_decimals,
                         fees,
                         swap_curve,
                     })
@@ -316,6 +320,7 @@ impl SwapInstruction {
                 owner,
                 fee_owner,
                 initial_supply,
+                lp_decimals,
                 fees,
                 swap_curve,
             }) => {
@@ -323,6 +328,7 @@ impl SwapInstruction {
                 buf.extend_from_slice(owner.as_ref());
                 buf.extend_from_slice(fee_owner.as_ref());
                 buf.extend_from_slice(&initial_supply.to_le_bytes());
+                buf.extend_from_slice(&lp_decimals.to_le_bytes());
                 let mut fees_slice = [0u8; Fees::LEN];
                 Pack::pack_into_slice(fees, &mut fees_slice[..]);
                 buf.extend_from_slice(&fees_slice);
@@ -347,8 +353,7 @@ pub fn initialize(
     fee_pubkey: &Pubkey,
     destination_pubkey: &Pubkey,
     nonce: u8,
-    fees: Fees,
-    swap_curve: SwapCurve,
+    _swap_curve: SwapCurve,
 ) -> Result<Instruction, ProgramError> {
     let init_data = SwapInstruction::Initialize(Initialize {
         nonce,
@@ -498,6 +503,7 @@ pub fn set_global_state(
     owner_pubkey: &Pubkey,
     fee_owner_pubkey: &Pubkey,
     initial_supply: u64,
+    lp_decimals: u8,
     fees: Fees,
     swap_curve: SwapCurve,
 ) -> Result<Instruction, ProgramError> {
@@ -505,6 +511,7 @@ pub fn set_global_state(
         owner:*owner_pubkey,
         fee_owner:*fee_owner_pubkey,
         initial_supply,
+        lp_decimals,
         fees,
         swap_curve
     });

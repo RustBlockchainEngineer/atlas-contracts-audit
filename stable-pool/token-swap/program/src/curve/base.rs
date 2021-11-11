@@ -6,7 +6,7 @@ use solana_program::{
     program_pack::{Pack, Sealed},
 };
 use crate::curve::{
-    calculator::{CurveCalculator, SwapWithoutFeesResult, TradeDirection},
+    calculator::{CurveCalculator, /*SwapWithoutFeesResult,*/ TradeDirection},
     constant_price::ConstantPriceCurve,
     constant_product::ConstantProductCurve,
     fees::Fees,
@@ -70,7 +70,7 @@ impl SwapCurve {
         source_amount: u128,
         swap_source_amount: u128,
         swap_destination_amount: u128,
-        trade_direction: TradeDirection,
+        _trade_direction: TradeDirection,
         fees: &Fees,
     ) -> Option<SwapResult> {
         // debit the fee to calculate the amount swapped        

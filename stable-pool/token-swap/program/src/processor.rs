@@ -3,15 +3,14 @@
 use crate::constraints::*;
 use crate::{
     curve::{
-        base::{SwapCurve, CurveType},
-        constant_product::ConstantProductCurve,
-        calculator::{RoundDirection, TradeDirection, INITIAL_SWAP_POOL_AMOUNT},
+        base::{SwapCurve},
+        calculator::{RoundDirection, TradeDirection},
         fees::Fees,
     },
     error::SwapError,
     instruction::{
-        DepositAllTokenTypes, DepositSingleTokenTypeExactAmountIn, Initialize, Swap,
-        SwapInstruction, WithdrawAllTokenTypes, WithdrawSingleTokenTypeExactAmountOut,SetGlobalState
+        DepositAllTokenTypes, Initialize, Swap,
+        SwapInstruction, WithdrawAllTokenTypes, SetGlobalState
     },
     state::{SwapState, SwapV1, SwapVersion, GlobalState},
 };
@@ -269,6 +268,7 @@ impl Processor {
         owner: &Pubkey,
         fee_owner: &Pubkey,
         initial_supply: u64,
+        lp_decimals: u8,
         fees: Fees,
         swap_curve: SwapCurve,
         accounts: &[AccountInfo],
@@ -327,19 +327,6 @@ impl Processor {
         if global_state.is_initialized == false
         {
             global_state.owner = Pubkey::from_str(INITIAL_PROGRAM_OWNER).map_err(|_| SwapError::InvalidProgramOwner)?;
-            global_state.is_initialized = true;
-            global_state.fees = Fees {
-                trade_fee_numerator: INITIAL_FEES.trade_fee_numerator,
-                trade_fee_denominator: INITIAL_FEES.trade_fee_denominator,
-            };
-            global_state.fee_owner = Pubkey::from_str(INITIAL_FEE_OWNER_KEY).map_err(|_| SwapError::IncorrectFeeAccount)?;
-            global_state.initial_supply = INITIAL_SWAP_POOL_AMOUNT;
-            global_state.swap_curve = SwapCurve {
-                    curve_type: CurveType::ConstantProduct,
-                    calculator: Box::new(
-                        ConstantProductCurve{}
-                    )
-                };
         }
         
         if global_state.owner != *current_owner_info.key
@@ -357,6 +344,7 @@ impl Processor {
         let obj = GlobalState{
             is_initialized:true,
             initial_supply: initial_supply,
+            lp_decimals: lp_decimals,
             owner: *owner,
             fee_owner: *fee_owner,
             fees,
@@ -456,7 +444,7 @@ impl Processor {
             return Err(SwapError::InvalidFreezeAuthority.into());
         }
         // fixed
-        if pool_mint.decimals != 8 {
+        if pool_mint.decimals != state.lp_decimals() {
             return Err(SwapError::MismatchDecimalValidation.into());
         }
         if *pool_mint_info.key != fee_account.mint {
@@ -919,6 +907,7 @@ impl Processor {
                 owner,
                 fee_owner,
                 initial_supply,
+                lp_decimals,
                 fees,
                 swap_curve,
             }) => {
@@ -928,6 +917,7 @@ impl Processor {
                     &owner,
                     &fee_owner,
                     initial_supply,
+                    lp_decimals,
                     fees,
                     swap_curve,
                     accounts,
@@ -1002,7 +992,7 @@ impl PrintProgramError for SwapError {
                 msg!("Error: The operation cannot be performed on the given curve")
             }
             SwapError::MismatchDecimalValidation => {
-                msg!("The decimal validation error.(Decimal must be 8)")
+                msg!("The decimal validation error.")
             }
 
             SwapError::InvalidPdaAddress => {

@@ -49,12 +49,6 @@ impl<'a> SwapConstraints<'a> {
     }
 }
 
-/// initial fees
-pub const INITIAL_FEES: &Fees = &Fees {
-    trade_fee_numerator: 0,
-    trade_fee_denominator: 10000,
-};
-
 const MINIMUM_FEES: &Fees = &Fees {
     trade_fee_numerator: 0,
     trade_fee_denominator: 10000,
@@ -72,9 +66,6 @@ pub const SYSTEM_PROGRAM_ID:&str = "11111111111111111111111111111111";
 
 /// initial program owner address
 pub const INITIAL_PROGRAM_OWNER: &str = "AMMAE3eViwHuH25gWHfLpsVqtwmBSksGohE53oEmYrG2";
-
-///initial fee owner address
-pub const INITIAL_FEE_OWNER_KEY: &str = "DyDdJM9KVsvosfXbcHDp4pRpmbMHkRq3pcarBykPy4ir";
 
 /// swap contraints
 pub const SWAP_CONSTRAINTS:SwapConstraints = SwapConstraints {

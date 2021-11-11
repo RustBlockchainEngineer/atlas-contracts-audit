@@ -228,6 +228,9 @@ pub struct GlobalState {
     /// initial lp supply
     pub initial_supply: u64,
 
+    /// lp token's decimals
+    pub lp_decimals: u8,
+
     ///Fee ratio
     pub fees: Fees,
 
@@ -237,7 +240,7 @@ pub struct GlobalState {
 impl Sealed for GlobalState {}
 impl Pack for GlobalState{
     /// Size of the Program State
-    const LEN:usize = 130; // add one for the version enum
+    const LEN:usize = 131; // add one for the version enum
 
     /// Pack a swap into a byte array, based on its version
     fn pack_into_slice(&self, output: &mut [u8]) {
@@ -247,13 +250,15 @@ impl Pack for GlobalState{
             state_owner,
             fee_owner,
             initial_supply,
+            lp_decimals,
             fees,
             swap_curve,
-        ) = mut_array_refs![output, 1, 32, 32, 8, 24, 33];
+        ) = mut_array_refs![output, 1, 32, 32, 8, 1, 24, 33];
         is_initialized[0] = self.is_initialized as u8;
         state_owner.copy_from_slice(self.owner.as_ref());
         fee_owner.copy_from_slice(self.fee_owner.as_ref());
         *initial_supply = self.initial_supply.to_le_bytes();
+        lp_decimals[0] = self.lp_decimals as u8;
         self.fees.pack_into_slice(&mut fees[..]);
         self.swap_curve.pack_into_slice(&mut swap_curve[..]);
     }
@@ -270,9 +275,10 @@ impl Pack for GlobalState{
             state_owner,
             fee_owner,
             initial_supply,
+            lp_decimals,
             fees,
             swap_curve,
-        ) = array_refs![input, 1, 32, 32, 8,  24, 33];
+        ) = array_refs![input, 1, 32, 32, 8, 1, 24, 33];
         Ok(Self {
             is_initialized: match is_initialized {
                 [0] => false,
@@ -282,6 +288,7 @@ impl Pack for GlobalState{
             owner: Pubkey::new_from_array(*state_owner),
             fee_owner: Pubkey::new_from_array(*fee_owner),
             initial_supply:u64::from_le_bytes(*initial_supply),
+            lp_decimals:lp_decimals[0],
             fees: Fees::unpack_from_slice(fees)?,
             swap_curve: SwapCurve::unpack_from_slice(swap_curve)?,
         })
@@ -306,6 +313,11 @@ impl GlobalState{
     /// initial supply to create pool
     pub fn initial_supply(&self) -> u64 {
         self.initial_supply
+    }
+
+    /// lp decimals
+    pub fn lp_decimals(&self) -> u8 {
+        self.lp_decimals
     }
     
     /// fees redistributed
