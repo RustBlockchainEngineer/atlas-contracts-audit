@@ -22,6 +22,9 @@ use arbitrary::Arbitrary;
 pub struct Initialize {
     /// nonce used to create valid program address
     pub nonce: u8,
+
+    /// nonce used to create valid program address
+    pub pool_type: u8,
 }
 
 

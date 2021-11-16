@@ -12,9 +12,16 @@ use std::convert::TryFrom;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Fees {
     ///
-    pub trade_fee_numerator: u64,
+    pub stable_lp_fee_numerator: u64,
     ///
-    pub trade_fee_denominator: u64,
+    pub stable_owner_fee_numerator: u64,
+    ///
+    pub base_lp_fee_numerator: u64,
+    ///
+    pub base_owner_fee_numerator: u64,
+    ///
+    pub fee_denominator: u64,
+    
 }
 
 /// Helper function for calculating swap fee

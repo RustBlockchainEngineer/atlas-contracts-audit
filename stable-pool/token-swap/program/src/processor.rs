@@ -358,6 +358,7 @@ impl Processor {
     pub fn process_initialize(
         program_id: &Pubkey,
         nonce: u8,
+        pool_type: u8,
         accounts: &[AccountInfo],
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
@@ -464,6 +465,7 @@ impl Processor {
             pool_mint: *pool_mint_info.key,
             token_a_mint: token_a.mint,
             token_b_mint: token_b.mint,
+            pool_type: SwapV1::get_pool_type(pool_type),
         });
         SwapVersion::pack(obj, &mut swap_info.data.borrow_mut())?;
         Ok(())
@@ -824,11 +826,13 @@ impl Processor {
         match instruction {
             SwapInstruction::Initialize(Initialize {
                 nonce,
+                pool_type
             }) => {
                 msg!("Instruction: Init");
                 Self::process_initialize(
                     program_id,
                     nonce,
+                    pool_type,
                     accounts,
                 )
             }

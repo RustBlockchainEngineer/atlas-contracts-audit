@@ -31,6 +31,10 @@ pub trait SwapState {
     fn token_a_mint(&self) -> &Pubkey;
     /// Address of token B mint
     fn token_b_mint(&self) -> &Pubkey;
+    ///
+    fn pool_type(&self) -> PoolType;
+    ///
+    fn get_pool_type(num: u8) -> PoolType;
 }
 
 
@@ -80,6 +84,14 @@ impl SwapVersion {
     }
 }
 
+pub enum PoolType {
+    /// Stable swap
+    Stable,
+
+    /// Base swap
+    Base,
+}
+
 /// Program states.
 #[repr(C)]
 #[derive(Debug, Default, PartialEq)]
@@ -109,6 +121,10 @@ pub struct SwapV1 {
     pub token_a_mint: Pubkey,
     /// Mint information for token B
     pub token_b_mint: Pubkey,
+
+    /// pool type
+    pub pool_type: PoolType
+    
 }
 
 impl SwapState for SwapV1 {
@@ -144,6 +160,14 @@ impl SwapState for SwapV1 {
         &self.token_b_mint
     }
 
+    fn pool_type(&self) -> PoolType {
+        self.pool_type
+    }
+
+    fn get_pool_type(num: u8) -> PoolType {
+        num as PoolType
+    }
+
 }
 
 impl Sealed for SwapV1 {}
@@ -154,7 +178,7 @@ impl IsInitialized for SwapV1 {
 }
 
 impl Pack for SwapV1 {
-    const LEN: usize = 194;
+    const LEN: usize = 195;
 
     fn pack_into_slice(&self, output: &mut [u8]) {
         let output = array_mut_ref![output, 0, SwapV1::LEN];
@@ -167,7 +191,8 @@ impl Pack for SwapV1 {
             pool_mint,
             token_a_mint,
             token_b_mint,
-        ) = mut_array_refs![output, 1, 1, 32, 32, 32, 32, 32, 32];
+            pool_type,
+        ) = mut_array_refs![output, 1, 1, 32, 32, 32, 32, 32, 32, 1];
         is_initialized[0] = self.is_initialized as u8;
         nonce[0] = self.nonce;
         token_program_id.copy_from_slice(self.token_program_id.as_ref());
@@ -176,6 +201,7 @@ impl Pack for SwapV1 {
         pool_mint.copy_from_slice(self.pool_mint.as_ref());
         token_a_mint.copy_from_slice(self.token_a_mint.as_ref());
         token_b_mint.copy_from_slice(self.token_b_mint.as_ref());
+        pool_type[0] = self.pool_type as u8;
     }
 
     /// Unpacks a byte buffer into a [SwapV1](struct.SwapV1.html).
@@ -194,7 +220,8 @@ impl Pack for SwapV1 {
             pool_mint,
             token_a_mint,
             token_b_mint,
-        ) = array_refs![input, 1, 1, 32, 32, 32, 32, 32, 32];
+            pool_type,
+        ) = array_refs![input, 1, 1, 32, 32, 32, 32, 32, 32, 1];
         Ok(Self {
             is_initialized: match is_initialized {
                 [0] => false,
@@ -207,7 +234,8 @@ impl Pack for SwapV1 {
             token_b: Pubkey::new_from_array(*token_b),
             pool_mint: Pubkey::new_from_array(*pool_mint),
             token_a_mint: Pubkey::new_from_array(*token_a_mint),
-            token_b_mint: Pubkey::new_from_array(*token_b_mint)
+            token_b_mint: Pubkey::new_from_array(*token_b_mint),
+            pool_type: pool_type[0] as PoolType
         })
     }
 }
