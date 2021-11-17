@@ -56,14 +56,40 @@ fn validate_fraction(numerator: u64, denominator: u64) -> Result<(), SwapError> 
 
 impl Fees {
     /// Calculate the trading fee in trading tokens
-    pub fn trading_fee(&self, trading_tokens: u128) -> Option<u128> {
+    pub fn stable_lp_fee(&self, trading_tokens: u128) -> Option<u128> {
         calculate_fee(
             trading_tokens,
-            u128::try_from(self.trade_fee_numerator).ok()?,
-            u128::try_from(self.trade_fee_denominator).ok()?,
+            u128::try_from(self.stable_lp_fee_numerator).ok()?,
+            u128::try_from(self.fee_denominator).ok()?,
         )
     }
 
+    /// Calculate the trading fee in trading tokens
+    pub fn base_lp_fee(&self, trading_tokens: u128) -> Option<u128> {
+        calculate_fee(
+            trading_tokens,
+            u128::try_from(self.base_lp_fee_numerator).ok()?,
+            u128::try_from(self.fee_denominator).ok()?,
+        )
+    }
+
+    /// Calculate the trading fee in trading tokens
+    pub fn stable_owner_fee(&self, trading_tokens: u128) -> Option<u128> {
+        calculate_fee(
+            trading_tokens,
+            u128::try_from(self.stable_owner_fee_numerator).ok()?,
+            u128::try_from(self.fee_denominator).ok()?,
+        )
+    }
+
+    /// Calculate the trading fee in trading tokens
+    pub fn base_owner_fee(&self, trading_tokens: u128) -> Option<u128> {
+        calculate_fee(
+            trading_tokens,
+            u128::try_from(self.base_owner_fee_numerator).ok()?,
+            u128::try_from(self.fee_denominator).ok()?,
+        )
+    }
 
     /// Validate that the fees are reasonable
     pub fn validate(&self) -> Result<(), SwapError> {

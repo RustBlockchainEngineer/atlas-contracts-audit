@@ -1,6 +1,6 @@
 //! State transition types
 
-use crate::curve::{base::SwapCurve, fees::Fees};
+use crate::curve::{base::{SwapCurve,CurveType}, fees::Fees};
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
 use enum_dispatch::enum_dispatch;
 use solana_program::{
@@ -32,9 +32,9 @@ pub trait SwapState {
     /// Address of token B mint
     fn token_b_mint(&self) -> &Pubkey;
     ///
-    fn pool_type(&self) -> PoolType;
+    fn curve_type(&self) -> CurveType;
     ///
-    fn get_pool_type(num: u8) -> PoolType;
+    fn get_curve_type(num: u8) -> CurveType;
 }
 
 
@@ -84,14 +84,6 @@ impl SwapVersion {
     }
 }
 
-pub enum PoolType {
-    /// Stable swap
-    Stable,
-
-    /// Base swap
-    Base,
-}
-
 /// Program states.
 #[repr(C)]
 #[derive(Debug, Default, PartialEq)]
@@ -123,7 +115,7 @@ pub struct SwapV1 {
     pub token_b_mint: Pubkey,
 
     /// pool type
-    pub pool_type: PoolType
+    pub curve_type: CurveType
     
 }
 
@@ -160,12 +152,12 @@ impl SwapState for SwapV1 {
         &self.token_b_mint
     }
 
-    fn pool_type(&self) -> PoolType {
-        self.pool_type
+    fn curve_type(&self) -> CurveType {
+        self.curve_type
     }
 
-    fn get_pool_type(num: u8) -> PoolType {
-        num as PoolType
+    fn get_curve_type(num: u8) -> CurveType {
+        num as CurveType
     }
 
 }
@@ -191,7 +183,7 @@ impl Pack for SwapV1 {
             pool_mint,
             token_a_mint,
             token_b_mint,
-            pool_type,
+            curve_type,
         ) = mut_array_refs![output, 1, 1, 32, 32, 32, 32, 32, 32, 1];
         is_initialized[0] = self.is_initialized as u8;
         nonce[0] = self.nonce;
@@ -201,7 +193,7 @@ impl Pack for SwapV1 {
         pool_mint.copy_from_slice(self.pool_mint.as_ref());
         token_a_mint.copy_from_slice(self.token_a_mint.as_ref());
         token_b_mint.copy_from_slice(self.token_b_mint.as_ref());
-        pool_type[0] = self.pool_type as u8;
+        curve_type[0] = self.curve_type as u8;
     }
 
     /// Unpacks a byte buffer into a [SwapV1](struct.SwapV1.html).
@@ -220,7 +212,7 @@ impl Pack for SwapV1 {
             pool_mint,
             token_a_mint,
             token_b_mint,
-            pool_type,
+            curve_type,
         ) = array_refs![input, 1, 1, 32, 32, 32, 32, 32, 32, 1];
         Ok(Self {
             is_initialized: match is_initialized {
@@ -235,7 +227,7 @@ impl Pack for SwapV1 {
             pool_mint: Pubkey::new_from_array(*pool_mint),
             token_a_mint: Pubkey::new_from_array(*token_a_mint),
             token_b_mint: Pubkey::new_from_array(*token_b_mint),
-            pool_type: pool_type[0] as PoolType
+            curve_type: curve_type[0] as CurveType
         })
     }
 }
@@ -268,7 +260,7 @@ pub struct GlobalState {
 impl Sealed for GlobalState {}
 impl Pack for GlobalState{
     /// Size of the Program State
-    const LEN:usize = 131; // add one for the version enum
+    const LEN:usize = 147; // add one for the version enum
 
     /// Pack a swap into a byte array, based on its version
     fn pack_into_slice(&self, output: &mut [u8]) {
@@ -281,7 +273,7 @@ impl Pack for GlobalState{
             lp_decimals,
             fees,
             swap_curve,
-        ) = mut_array_refs![output, 1, 32, 32, 8, 1, 24, 33];
+        ) = mut_array_refs![output, 1, 32, 32, 8, 1, 40, 33];
         is_initialized[0] = self.is_initialized as u8;
         state_owner.copy_from_slice(self.owner.as_ref());
         fee_owner.copy_from_slice(self.fee_owner.as_ref());
@@ -306,7 +298,7 @@ impl Pack for GlobalState{
             lp_decimals,
             fees,
             swap_curve,
-        ) = array_refs![input, 1, 32, 32, 8, 1, 24, 33];
+        ) = array_refs![input, 1, 32, 32, 8, 1, 40, 33];
         Ok(Self {
             is_initialized: match is_initialized {
                 [0] => false,

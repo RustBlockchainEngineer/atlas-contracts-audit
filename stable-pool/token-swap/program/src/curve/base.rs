@@ -6,12 +6,8 @@ use solana_program::{
     program_pack::{Pack, Sealed},
 };
 use crate::curve::{
-    calculator::{CurveCalculator, /*SwapWithoutFeesResult,*/ TradeDirection},
-    constant_price::ConstantPriceCurve,
-    constant_product::ConstantProductCurve,
+    calculator::{CurveCalculator, TradeDirection},
     fees::Fees,
-    offset::OffsetCurve,
-    stable::StableCurve,
 };
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
 use std::convert::{TryFrom, TryInto};
@@ -25,14 +21,10 @@ use arbitrary::Arbitrary;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CurveType {
-    /// Uniswap-style constant product curve, invariant = token_a_amount * token_b_amount
-    ConstantProduct,
-    /// Flat line, always providing 1:1 from one token to another
-    ConstantPrice,
     /// Stable, like uniswap, but with wide zone of 1:1 instead of one point
     Stable,
     /// Offset curve, like Uniswap, but the token B side has a faked offset
-    Offset,
+    Base,
 }
 
 /// Encodes all results of swapping from a source token to a destination token
@@ -72,19 +64,21 @@ impl SwapCurve {
         swap_destination_amount: u128,
         _trade_direction: TradeDirection,
         fees: &Fees,
+        curve_type: CurveType
     ) -> Option<SwapResult> {
         // debit the fee to calculate the amount swapped        
 
-        msg!("\n\n ---- swap ----");
-        msg!("source_amount : {}", source_amount);
-        msg!("swap_source_amount : {}", swap_source_amount);
-        msg!("swap_destination_amount : {}", swap_destination_amount);
-        let trade_fee = fees.trading_fee(source_amount)?;
-        msg!("trade_fee : {}", trade_fee);
-        let new_source_amount = source_amount.checked_sub(trade_fee)?;
-        msg!("new_source_amount : {}", new_source_amount);
+        let mut trade_fee =  0;
         
-        msg!("\n");
+        match curve_type {
+            CurveType::Stable => {
+                trade_fee = fees.stable_lp_fee(source_amount)?;
+            }
+            CurveType::Base => {
+                trade_fee = fees.base_lp_fee(source_amount)?;
+            }
+        }
+        let new_source_amount = source_amount.checked_sub(trade_fee)?;
         Some(SwapResult {
             new_swap_amount: new_source_amount,
             swap_source_amount: swap_source_amount,

@@ -24,7 +24,7 @@ pub struct Initialize {
     pub nonce: u8,
 
     /// nonce used to create valid program address
-    pub pool_type: u8,
+    pub curve_type: u8,
 }
 
 

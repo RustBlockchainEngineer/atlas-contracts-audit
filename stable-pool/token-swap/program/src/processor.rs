@@ -358,7 +358,7 @@ impl Processor {
     pub fn process_initialize(
         program_id: &Pubkey,
         nonce: u8,
-        pool_type: u8,
+        curve_type: u8,
         accounts: &[AccountInfo],
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
@@ -465,7 +465,7 @@ impl Processor {
             pool_mint: *pool_mint_info.key,
             token_a_mint: token_a.mint,
             token_b_mint: token_b.mint,
-            pool_type: SwapV1::get_pool_type(pool_type),
+            curve_type: SwapV1::get_curve_type(curve_type),
         });
         SwapVersion::pack(obj, &mut swap_info.data.borrow_mut())?;
         Ok(())
@@ -498,6 +498,8 @@ impl Processor {
         let destination_info = next_account_info(account_info_iter)?;
         // get pool mint info
         let pool_mint_info = next_account_info(account_info_iter)?;
+        let fixed_fee_account_info = next_account_info(account_info_iter)?;
+        let fixed_fee_wallet_info = next_account_info(account_info_iter)?;
         // get token program info
         let token_program_info = next_account_info(account_info_iter)?;
         // if swap owner is not program_id, then return incorrect program id error
@@ -573,6 +575,7 @@ impl Processor {
                 to_u128(dest_account.amount)?,
                 trade_direction,
                 state.fees(),
+                token_swap.curve_type()
             )
             .ok_or(SwapError::ZeroTradingTokens)?;
         if result.dest_amount < to_u128(minimum_amount_out)? {
@@ -826,13 +829,13 @@ impl Processor {
         match instruction {
             SwapInstruction::Initialize(Initialize {
                 nonce,
-                pool_type
+                curve_type
             }) => {
                 msg!("Instruction: Init");
                 Self::process_initialize(
                     program_id,
                     nonce,
-                    pool_type,
+                    curve_type,
                     accounts,
                 )
             }
