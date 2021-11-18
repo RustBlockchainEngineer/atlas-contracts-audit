@@ -10,6 +10,16 @@ use crate::{
 
 use solana_program::program_error::ProgramError;
 
+const MINIMUM_FEES: &Fees = &Fees {
+    constant_product_return_fee_numerator: 10,
+    constant_product_fixed_fee_numerator: 10,
+    stable_return_fee_numerator: 10,
+    stable_fixed_fee_numerator: 10,
+    fee_denominator: 10000,
+};
+const VALID_CURVE_TYPES: &[CurveType] = &[CurveType::Stable, CurveType::ConstantProduct];
+
+
 /// Encodes fee constraints, used in multihost environments where the program
 /// may be used by multiple frontends, to ensure that proper fees are being
 /// assessed.
@@ -39,8 +49,10 @@ impl<'a> SwapConstraints<'a> {
 
     /// Checks that the provided curve is valid for the given constraints
     pub fn validate_fees(&self, fees: &Fees) -> Result<(), ProgramError> {
-        if fees.trade_fee_numerator >= self.fees.trade_fee_numerator
-            && fees.trade_fee_denominator == self.fees.trade_fee_denominator
+        if fees.constant_product_return_fee_numerator >= self.fees.constant_product_return_fee_numerator
+            && fees.constant_product_fixed_fee_numerator == self.fees.constant_product_fixed_fee_numerator
+            && fees.stable_return_fee_numerator == self.fees.stable_return_fee_numerator
+            && fees.stable_fixed_fee_numerator == self.fees.stable_fixed_fee_numerator
         {
             Ok(())
         } else {
@@ -48,12 +60,6 @@ impl<'a> SwapConstraints<'a> {
         }
     }
 }
-
-const MINIMUM_FEES: &Fees = &Fees {
-    trade_fee_numerator: 0,
-    trade_fee_denominator: 10000,
-};
-const VALID_CURVE_TYPES: &[CurveType] = &[CurveType::ConstantPrice, CurveType::ConstantProduct];
 
 /// swap tag for seeds
 pub const SWAP_TAG:&str = "atals-swap";

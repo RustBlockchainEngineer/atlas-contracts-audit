@@ -270,7 +270,6 @@ impl Processor {
         initial_supply: u64,
         lp_decimals: u8,
         fees: Fees,
-        swap_curve: SwapCurve,
         accounts: &[AccountInfo],
     ) -> ProgramResult {
 
@@ -334,11 +333,9 @@ impl Processor {
             return Err(SwapError::InvalidProgramOwner.into());
         }
 
-        SWAP_CONSTRAINTS.validate_curve(&swap_curve)?;
         SWAP_CONSTRAINTS.validate_fees(&fees)?;
 
         fees.validate()?;
-        swap_curve.calculator.validate()?;
 
         //Save the program state
         let obj = GlobalState{
@@ -348,7 +345,6 @@ impl Processor {
             owner: *owner,
             fee_owner: *fee_owner,
             fees,
-            swap_curve,
         };
         obj.pack_into_slice(&mut &mut global_state_info.data.borrow_mut()[..]);
         Ok(())
@@ -358,7 +354,7 @@ impl Processor {
     pub fn process_initialize(
         program_id: &Pubkey,
         nonce: u8,
-        curve_type: u8,
+        swap_curve: SwapCurve,
         accounts: &[AccountInfo],
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
@@ -408,8 +404,9 @@ impl Processor {
         if token_a.mint == token_b.mint {
             return Err(SwapError::RepeatedMint.into());
         }
-        
-        state.swap_curve()
+        SWAP_CONSTRAINTS.validate_curve(&swap_curve)?;
+        swap_curve.calculator.validate()?;
+        swap_curve
             .calculator
             .validate_supply(token_a.amount, token_b.amount)?;
 
@@ -456,6 +453,7 @@ impl Processor {
             initial_amount,
         )?;
 
+        swap_curve.calculator.validate()?;
         let obj = SwapVersion::SwapV1(SwapV1 {
             is_initialized: true,
             nonce,
@@ -465,7 +463,7 @@ impl Processor {
             pool_mint: *pool_mint_info.key,
             token_a_mint: token_a.mint,
             token_b_mint: token_b.mint,
-            curve_type: SwapV1::get_curve_type(curve_type),
+            swap_curve,
         });
         SwapVersion::pack(obj, &mut swap_info.data.borrow_mut())?;
         Ok(())
@@ -567,7 +565,7 @@ impl Processor {
         } else {
             TradeDirection::BtoA
         };
-        let result = state
+        let result = token_swap
             .swap_curve()
             .swap(
                 to_u128(amount_in)?,
@@ -575,10 +573,10 @@ impl Processor {
                 to_u128(dest_account.amount)?,
                 trade_direction,
                 state.fees(),
-                token_swap.curve_type()
+                token_swap.swap_curve()
             )
             .ok_or(SwapError::ZeroTradingTokens)?;
-        if result.dest_amount < to_u128(minimum_amount_out)? {
+        if result.destination_amount_swapped < to_u128(minimum_amount_out)? {
             return Err(SwapError::ExceededSlippage.into());
         }
 
@@ -589,9 +587,21 @@ impl Processor {
             swap_source_info.clone(),
             user_transfer_authority_info.clone(),
             token_swap.nonce(),
-            to_u64(result.dest_amount)?,
+            to_u64(result.source_amount_swapped-result.owner_fee)?,
         )?;
 
+        //otherwise transfer SPL_Token
+        Self::token_transfer(
+            swap_info.key,
+            token_program_info.clone(),
+            source_info.clone(),
+            fixed_fee_account_info.clone(),
+            user_transfer_authority_info.clone(),
+            token_swap.nonce(),
+            to_u64(result.owner_fee)?,
+        )?;
+
+        //Transfer pc token from pool
         Self::token_transfer(
             swap_info.key,
             token_program_info.clone(),
@@ -599,8 +609,9 @@ impl Processor {
             destination_info.clone(),
             authority_info.clone(),
             token_swap.nonce(),
-            to_u64(result.dest_amount)?,
+            to_u64(result.destination_amount_swapped)?,
         )?;
+
 
         Ok(())
     }
@@ -648,7 +659,7 @@ impl Processor {
             return Err(SwapError::NotInitializedState.into());
         }
 
-        let calculator = &state.swap_curve().calculator;
+        let calculator = &token_swap.swap_curve().calculator;
         if !calculator.allows_deposits() {
             return Err(SwapError::UnsupportedCurveOperation.into());
         }
@@ -754,7 +765,7 @@ impl Processor {
         let token_b = Self::unpack_token_account(token_b_info, token_swap.token_program_id())?;
         let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
 
-        let calculator = &state.swap_curve().calculator;
+        let calculator = &token_swap.swap_curve().calculator;
 
         let mut pool_token_amount = to_u128(pool_token_amount)?;
 
@@ -829,13 +840,13 @@ impl Processor {
         match instruction {
             SwapInstruction::Initialize(Initialize {
                 nonce,
-                curve_type
+                swap_curve
             }) => {
                 msg!("Instruction: Init");
                 Self::process_initialize(
                     program_id,
                     nonce,
-                    curve_type,
+                    swap_curve,
                     accounts,
                 )
             }
@@ -880,7 +891,6 @@ impl Processor {
                 initial_supply,
                 lp_decimals,
                 fees,
-                swap_curve,
             }) => {
                 msg!("Instruction: SetGlobalStateInstruction");
                 Self::process_set_global_state(
@@ -890,7 +900,6 @@ impl Processor {
                     initial_supply,
                     lp_decimals,
                     fees,
-                    swap_curve,
                     accounts,
                 )
             }

@@ -2,13 +2,18 @@
 
 use solana_program::{
     program_error::ProgramError,
-    msg,
     program_pack::{Pack, Sealed},
 };
+
 use crate::curve::{
-    calculator::{CurveCalculator, TradeDirection},
+    calculator::{CurveCalculator, SwapWithoutFeesResult, TradeDirection},
+    constant_price::ConstantPriceCurve,
+    constant_product::ConstantProductCurve,
     fees::Fees,
+    offset::OffsetCurve,
+    stable::StableCurve,
 };
+use crate::error::SwapError;
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
 use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
@@ -21,25 +26,31 @@ use arbitrary::Arbitrary;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CurveType {
+    /// Uniswap-style constant product curve, invariant = token_a_amount * token_b_amount
+    ConstantProduct,
+    /// Flat line, always providing 1:1 from one token to another
+    ConstantPrice,
     /// Stable, like uniswap, but with wide zone of 1:1 instead of one point
     Stable,
     /// Offset curve, like Uniswap, but the token B side has a faked offset
-    Base,
+    Offset,
 }
 
 /// Encodes all results of swapping from a source token to a destination token
 #[derive(Debug, PartialEq)]
 pub struct SwapResult {
-    /// source swap amount - trade fee
-    pub new_swap_amount: u128,
-    /// current supply of source token.
-    pub swap_source_amount:u128,
-    /// destination supply of dest token
-    pub dest_amount: u128,
-    /// dest
-    pub dest_source_amount:u128,
-    ///
+    /// New amount of source token
+    pub new_swap_source_amount: u128,
+    /// New amount of destination token
+    pub new_swap_destination_amount: u128,
+    /// Amount of source token swapped (includes fees)
+    pub source_amount_swapped: u128,
+    /// Amount of destination token swapped
+    pub destination_amount_swapped: u128,
+    /// Amount of source tokens going to pool holders
     pub trade_fee: u128,
+    /// Amount of source tokens going to owner
+    pub owner_fee: u128,
 }
 
 /// Concrete struct to wrap around the trait object which performs calculation.
@@ -62,29 +73,36 @@ impl SwapCurve {
         source_amount: u128,
         swap_source_amount: u128,
         swap_destination_amount: u128,
-        _trade_direction: TradeDirection,
+        trade_direction: TradeDirection,
         fees: &Fees,
-        curve_type: CurveType
+        swap_curve: &SwapCurve
     ) -> Option<SwapResult> {
-        // debit the fee to calculate the amount swapped        
+        // debit the fee to calculate the amount swapped
+        let trade_fee = fees.return_fee(source_amount, swap_curve)?;
+        let owner_fee = fees.fixed_fee(source_amount, swap_curve)?;
 
-        let mut trade_fee =  0;
-        
-        match curve_type {
-            CurveType::Stable => {
-                trade_fee = fees.stable_lp_fee(source_amount)?;
-            }
-            CurveType::Base => {
-                trade_fee = fees.base_lp_fee(source_amount)?;
-            }
-        }
-        let new_source_amount = source_amount.checked_sub(trade_fee)?;
+        let total_fees = trade_fee.checked_add(owner_fee)?;
+        let source_amount_less_fees = source_amount.checked_sub(total_fees)?;
+
+        let SwapWithoutFeesResult {
+            source_amount_swapped,
+            destination_amount_swapped,
+        } = self.calculator.swap_without_fees(
+            source_amount_less_fees,
+            swap_source_amount,
+            swap_destination_amount,
+            trade_direction,
+        )?;
+
+        let source_amount_swapped = source_amount_swapped.checked_add(total_fees)?;
         Some(SwapResult {
-            new_swap_amount: new_source_amount,
-            swap_source_amount: swap_source_amount,
-            dest_amount:new_source_amount,
-            dest_source_amount:swap_destination_amount,
-            trade_fee:trade_fee,
+            new_swap_source_amount: swap_source_amount.checked_add(source_amount_swapped)?,
+            new_swap_destination_amount: swap_destination_amount
+                .checked_sub(destination_amount_swapped)?,
+            source_amount_swapped,
+            destination_amount_swapped,
+            trade_fee,
+            owner_fee,
         })
     }
 
@@ -96,7 +114,7 @@ impl SwapCurve {
         swap_token_b_amount: u128,
         pool_supply: u128,
         trade_direction: TradeDirection,
-        fees: &Fees,
+        _fees: &Fees,
     ) -> Option<u128> {
         if source_amount == 0 {
             return Some(0);
@@ -104,8 +122,8 @@ impl SwapCurve {
         // Get the trading fee incurred if *half* the source amount is swapped
         // for the other side. Reference at:
         // https://github.com/balancer-labs/balancer-core/blob/f4ed5d65362a8d6cec21662fb6eae233b0babc1f/contracts/BMath.sol#L117
-        let half_source_amount = std::cmp::max(1, source_amount.checked_div(2)?);
-        let trade_fee = fees.trading_fee(half_source_amount)?;
+        // let half_source_amount = std::cmp::max(1, source_amount.checked_div(2)?);
+        let trade_fee = 0;//fees.trading_fee(half_source_amount)?;
         let source_amount = source_amount.checked_sub(trade_fee)?;
         self.calculator.deposit_single_token_type(
             source_amount,
@@ -124,7 +142,7 @@ impl SwapCurve {
         swap_token_b_amount: u128,
         pool_supply: u128,
         trade_direction: TradeDirection,
-        fees: &Fees,
+        _fees: &Fees,
     ) -> Option<u128> {
         if source_amount == 0 {
             return Some(0);
@@ -132,8 +150,8 @@ impl SwapCurve {
         // Get the trading fee incurred if *half* the source amount is swapped
         // for the other side. Reference at:
         // https://github.com/balancer-labs/balancer-core/blob/f4ed5d65362a8d6cec21662fb6eae233b0babc1f/contracts/BMath.sol#L117
-        let half_source_amount = std::cmp::max(1, source_amount.checked_div(2)?);
-        let trade_fee = fees.trading_fee(half_source_amount)?;
+        // let half_source_amount = std::cmp::max(1, source_amount.checked_div(2)?);
+        let trade_fee = 0;//fees.trading_fee(half_source_amount)?;
         let source_amount = source_amount.checked_sub(trade_fee)?;
         self.calculator.withdraw_single_token_type_exact_out(
             source_amount,
@@ -192,8 +210,8 @@ impl Pack for SwapCurve {
 
     /// Unpacks a byte buffer into a SwapCurve
     fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
-        if input.len() < Self::LEN {
-            return Err(ProgramError::MaxSeedLengthExceeded);
+        if input.len() < Self::LEN{
+            return Err(SwapError::InvalidInstruction.into());    
         }
         let input = array_ref![input, 0, 33];
         #[allow(clippy::ptr_offset_with_cast)]

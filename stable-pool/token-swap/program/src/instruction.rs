@@ -23,8 +23,9 @@ pub struct Initialize {
     /// nonce used to create valid program address
     pub nonce: u8,
 
-    /// nonce used to create valid program address
-    pub curve_type: u8,
+    /// swap curve info for pool, including CurveType and anything
+    /// else that may be required
+    pub swap_curve: SwapCurve,
 }
 
 
@@ -47,9 +48,6 @@ pub struct SetGlobalState {
 
     ///Fee ratio
     pub fees: Fees,
-
-    ///Curve Type to swap
-    pub swap_curve: SwapCurve,
 
 }
 
@@ -203,9 +201,11 @@ impl SwapInstruction {
         Ok(match tag {
             0 => {
                 let (&nonce, rest) = rest.split_first().ok_or(SwapError::InvalidInstruction)?;
+                let swap_curve = SwapCurve::unpack_unchecked(rest)?;
                 if rest.len() == 1 {
                     Self::Initialize(Initialize {
                         nonce,
+                        swap_curve,
                     })
                 } else {
                     return Err(SwapError::InvalidInstruction.into());
@@ -250,14 +250,12 @@ impl SwapInstruction {
                 if rest.len() >= Fees::LEN {
                     let (fees, rest) = rest.split_at(Fees::LEN);
                     let fees = Fees::unpack_unchecked(fees)?;
-                    let swap_curve = SwapCurve::unpack_unchecked(rest)?;
                     Self::SetGlobalStateInstruction(SetGlobalState {
                         owner,
                         fee_owner,
                         initial_supply,
                         lp_decimals,
                         fees,
-                        swap_curve,
                     })
                 } else {
                     return Err(SwapError::InvalidInstruction.into());
@@ -287,9 +285,13 @@ impl SwapInstruction {
         match &*self {
             Self::Initialize(Initialize {
                 nonce,
+                swap_curve
             }) => {
                 buf.push(0);
                 buf.push(*nonce);
+                let mut swap_curve_slice = [0u8; SwapCurve::LEN];
+                Pack::pack_into_slice(swap_curve, &mut swap_curve_slice[..]);
+                buf.extend_from_slice(&swap_curve_slice);
             }
             Self::Swap(Swap {
                 amount_in,
@@ -325,7 +327,6 @@ impl SwapInstruction {
                 initial_supply,
                 lp_decimals,
                 fees,
-                swap_curve,
             }) => {
                 buf.push(6);
                 buf.extend_from_slice(owner.as_ref());
@@ -335,9 +336,6 @@ impl SwapInstruction {
                 let mut fees_slice = [0u8; Fees::LEN];
                 Pack::pack_into_slice(fees, &mut fees_slice[..]);
                 buf.extend_from_slice(&fees_slice);
-                let mut swap_curve_slice = [0u8; SwapCurve::LEN];
-                Pack::pack_into_slice(swap_curve, &mut swap_curve_slice[..]);
-                buf.extend_from_slice(&swap_curve_slice);
             }
         }
         buf
@@ -356,10 +354,11 @@ pub fn initialize(
     fee_pubkey: &Pubkey,
     destination_pubkey: &Pubkey,
     nonce: u8,
-    _swap_curve: SwapCurve,
+    swap_curve: SwapCurve,
 ) -> Result<Instruction, ProgramError> {
     let init_data = SwapInstruction::Initialize(Initialize {
         nonce,
+        swap_curve
     });
     let data = init_data.pack();
 
@@ -508,7 +507,6 @@ pub fn set_global_state(
     initial_supply: u64,
     lp_decimals: u8,
     fees: Fees,
-    swap_curve: SwapCurve,
 ) -> Result<Instruction, ProgramError> {
     let init_data = SwapInstruction::SetGlobalStateInstruction(SetGlobalState {
         owner:*owner_pubkey,
@@ -516,7 +514,6 @@ pub fn set_global_state(
         initial_supply,
         lp_decimals,
         fees,
-        swap_curve
     });
     let data = init_data.pack();
 

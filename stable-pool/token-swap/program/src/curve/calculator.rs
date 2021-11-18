@@ -1,6 +1,7 @@
 //! Swap calculations
 
 use {crate::error::SwapError, spl_math::precise_number::PreciseNumber, std::fmt::Debug};
+use crate::curve::base::CurveType;
 
 #[cfg(feature = "fuzz")]
 use arbitrary::Arbitrary;
@@ -97,8 +98,8 @@ pub trait CurveCalculator: Debug + DynPack {
 
     /// Get the supply for a new pool
     /// The default implementation is a Balancer-style fixed initial supply
-    fn new_pool_supply(&self) -> u128 {
-        INITIAL_SWAP_POOL_AMOUNT as u128
+    fn new_pool_supply(&self) -> u64 {
+        INITIAL_SWAP_POOL_AMOUNT
     }
 
     /// Get the amount of trading tokens for the given amount of pool tokens,
@@ -151,7 +152,10 @@ pub trait CurveCalculator: Debug + DynPack {
 
     /// Validate that the given curve has no invalid parameters
     fn validate(&self) -> Result<(), SwapError>;
-
+    
+    /// Get the curve type for calculator
+    fn get_curve_type(&self) -> CurveType;
+    
     /// Validate the given supply on initialization. This is useful for curves
     /// that allow zero supply on one or both sides, since the standard constant
     /// product curve must have a non-zero supply on both sides.
