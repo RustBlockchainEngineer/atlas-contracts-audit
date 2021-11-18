@@ -207,14 +207,14 @@ impl SwapInstruction {
                 msg!("unpack instruction nonce {}", nonce);
                 let swap_curve = SwapCurve::unpack_unchecked(rest)?;
                 msg!("unpack instruction rest.len() {}", rest.len());
-                if rest.len() == 1 {
+                // if rest.len() == 1 {
                     Self::Initialize(Initialize {
                         nonce,
                         swap_curve,
                     })
-                } else {
-                    return Err(SwapError::InvalidInstruction.into());
-                }
+                // } else {
+                //     return Err(SwapError::InvalidInstruction.into());
+                // }
             }
             1 => {
                 let (amount_in, rest) = Self::unpack_u64(rest)?;
