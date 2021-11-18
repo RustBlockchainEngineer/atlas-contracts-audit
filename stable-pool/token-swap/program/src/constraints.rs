@@ -11,10 +11,10 @@ use crate::{
 use solana_program::program_error::ProgramError;
 
 const MINIMUM_FEES: &Fees = &Fees {
-    constant_product_return_fee_numerator: 10,
-    constant_product_fixed_fee_numerator: 10,
-    stable_return_fee_numerator: 10,
-    stable_fixed_fee_numerator: 10,
+    constant_product_return_fee_numerator: 0,
+    constant_product_fixed_fee_numerator: 0,
+    stable_return_fee_numerator: 0,
+    stable_fixed_fee_numerator: 0,
     fee_denominator: 10000,
 };
 const VALID_CURVE_TYPES: &[CurveType] = &[CurveType::Stable, CurveType::ConstantProduct];
@@ -49,20 +49,12 @@ impl<'a> SwapConstraints<'a> {
 
     /// Checks that the provided curve is valid for the given constraints
     pub fn validate_fees(&self, fees: &Fees) -> Result<(), ProgramError> {
-        msg!("{}, {}, {}, {}",
-            fees.constant_product_return_fee_numerator,
-            fees.constant_product_fixed_fee_numerator, 
-            fees.stable_return_fee_numerator, 
-            fees.stable_fixed_fee_numerator);
-        msg!("{}, {}, {}, {}",
-            self.fees.constant_product_return_fee_numerator,
-            self.fees.constant_product_fixed_fee_numerator, 
-            self.fees.stable_return_fee_numerator, 
-            self.fees.stable_fixed_fee_numerator);
+        msg!("{}, {}, {}, {}",fees.constant_product_return_fee_numerator,fees.constant_product_fixed_fee_numerator, fees.stable_return_fee_numerator, fees.stable_fixed_fee_numerator);
+        msg!("{}, {}, {}, {}",self.fees.constant_product_return_fee_numerator,self.fees.constant_product_fixed_fee_numerator, self.fees.stable_return_fee_numerator, self.fees.stable_fixed_fee_numerator);
         if fees.constant_product_return_fee_numerator >= self.fees.constant_product_return_fee_numerator
-            && fees.constant_product_fixed_fee_numerator == self.fees.constant_product_fixed_fee_numerator
-            && fees.stable_return_fee_numerator == self.fees.stable_return_fee_numerator
-            && fees.stable_fixed_fee_numerator == self.fees.stable_fixed_fee_numerator
+            && fees.constant_product_fixed_fee_numerator >= self.fees.constant_product_fixed_fee_numerator
+            && fees.stable_return_fee_numerator >= self.fees.stable_return_fee_numerator
+            && fees.stable_fixed_fee_numerator >= self.fees.stable_fixed_fee_numerator
         {
             Ok(())
         } else {
