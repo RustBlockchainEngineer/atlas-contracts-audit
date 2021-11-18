@@ -9,6 +9,7 @@ use solana_program::{
     program_error::ProgramError,
     program_pack::Pack,
     pubkey::Pubkey,
+    msg
 };
 use std::convert::TryInto;
 use std::mem::size_of;
@@ -197,11 +198,15 @@ pub enum SwapInstruction {
 impl SwapInstruction {
     /// Unpacks a byte buffer into a [SwapInstruction](enum.SwapInstruction.html).
     pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
+        msg!("unpack instruction");
         let (&tag, rest) = input.split_first().ok_or(SwapError::InvalidInstruction)?;
+        msg!("unpack instruction tag {}", tag);
         Ok(match tag {
             0 => {
                 let (&nonce, rest) = rest.split_first().ok_or(SwapError::InvalidInstruction)?;
+                msg!("unpack instruction nonce {}", nonce);
                 let swap_curve = SwapCurve::unpack_unchecked(rest)?;
+                msg!("unpack instruction rest.len() {}", rest.len());
                 if rest.len() == 1 {
                     Self::Initialize(Initialize {
                         nonce,
