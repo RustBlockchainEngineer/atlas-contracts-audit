@@ -71,7 +71,7 @@ pub const RENT_SYSVAR_ID:&str = "SysvarRent111111111111111111111111111111111";
 pub const SYSTEM_PROGRAM_ID:&str = "11111111111111111111111111111111";
 
 /// initial program owner address
-pub const INITIAL_PROGRAM_OWNER: &str = "AMMAE3eViwHuH25gWHfLpsVqtwmBSksGohE53oEmYrG2";
+pub const INITIAL_PROGRAM_OWNER: &str = "ArNRr3C8DATnfbGFTQyPe38cBgXwkfon1CHSxgesb1rG";
 
 /// swap contraints
 pub const SWAP_CONSTRAINTS:SwapConstraints = SwapConstraints {
