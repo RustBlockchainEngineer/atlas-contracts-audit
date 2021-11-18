@@ -332,11 +332,11 @@ impl Processor {
         {
             return Err(SwapError::InvalidProgramOwner.into());
         }
-
+        msg!("**************** validate_fees");
         SWAP_CONSTRAINTS.validate_fees(&fees)?;
-
+        msg!("**************** validate_fees1");
         fees.validate()?;
-
+        msg!("**************** validate_fees2");
         //Save the program state
         let obj = GlobalState{
             is_initialized:true,
@@ -346,7 +346,9 @@ impl Processor {
             fee_owner: *fee_owner,
             fees,
         };
+        msg!("**************** validate_fees3");
         obj.pack_into_slice(&mut &mut global_state_info.data.borrow_mut()[..]);
+        msg!("**************** validate_fees4");
         Ok(())
     }
 
