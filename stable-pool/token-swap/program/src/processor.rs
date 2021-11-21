@@ -681,14 +681,39 @@ impl Processor {
         let token_b = Self::unpack_token_account(token_b_info, token_swap.token_program_id())?;
         let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
                 
-        let pool_amount = Self::calculate_stable_lp_amount(
-            to_u128(pool_mint.supply)?,
-            to_u128(token_a.amount)?,
-            to_u128(token_b.amount)?,
-            to_u128(maximum_token_a_amount)?,
-            to_u128(maximum_token_b_amount)?
-        ).ok_or(SwapError::ZeroTradingTokens)?;
+        let current_pool_mint_supply = to_u128(pool_mint.supply)?;
+        let (pool_token_amount, pool_mint_supply) = if current_pool_mint_supply > 0 {
+            (to_u128(pool_token_amount)?, current_pool_mint_supply)
+        } else {
+            (to_u128(state.initial_supply())?, to_u128(state.initial_supply())?)
+        };
 
+        let results = calculator
+            .pool_tokens_to_trading_tokens(
+                pool_token_amount,
+                pool_mint_supply,
+                to_u128(token_a.amount)?,
+                to_u128(token_b.amount)?,
+                RoundDirection::Ceiling,
+            )
+            .ok_or(SwapError::ZeroTradingTokens)?;
+        let token_a_amount = to_u64(results.token_a_amount)?;
+        if token_a_amount > maximum_token_a_amount {
+            return Err(SwapError::ExceededSlippage.into());
+        }
+        if token_a_amount == 0 {
+            return Err(SwapError::ZeroTradingTokens.into());
+        }
+        let token_b_amount = to_u64(results.token_b_amount)?;
+        if token_b_amount > maximum_token_b_amount {
+            return Err(SwapError::ExceededSlippage.into());
+        }
+        if token_b_amount == 0 {
+            return Err(SwapError::ZeroTradingTokens.into());
+        }
+
+        let pool_token_amount = to_u64(pool_token_amount)?;
+        //transfer token to pool
         Self::token_transfer(
             swap_info.key,
             token_program_info.clone(),
@@ -696,7 +721,7 @@ impl Processor {
             token_a_info.clone(),
             user_transfer_authority_info.clone(),
             token_swap.nonce(),
-            maximum_token_a_amount,
+            token_a_amount,
         )?;
         Self::token_transfer(
             swap_info.key,
@@ -705,8 +730,9 @@ impl Processor {
             token_b_info.clone(),
             user_transfer_authority_info.clone(),
             token_swap.nonce(),
-            maximum_token_b_amount,
+            token_b_amount,
         )?;
+        //mint lp token to wallet
         Self::token_mint_to(
             swap_info.key,
             token_program_info.clone(),
@@ -714,7 +740,7 @@ impl Processor {
             dest_info.clone(),
             authority_info.clone(),
             token_swap.nonce(),
-            to_u64(pool_amount)?,
+            pool_token_amount,
         )?;
 
         Ok(())
