@@ -225,7 +225,7 @@ impl SwapInstruction {
                 })
             }
             2 => {
-                //let (pool_token_amount, rest) = Self::unpack_u64(rest)?;
+                let (pool_token_amount, rest) = Self::unpack_u64(rest)?;
                 let (maximum_token_a_amount, rest) = Self::unpack_u64(rest)?;
                 let (maximum_token_b_amount, _rest) = Self::unpack_u64(rest)?;
                 Self::DepositAllTokenTypes(DepositAllTokenTypes {
