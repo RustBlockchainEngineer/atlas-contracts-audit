@@ -333,7 +333,7 @@ impl SwapInstruction {
                 lp_decimals,
                 fees,
             }) => {
-                buf.push(6);
+                buf.push(4);
                 buf.extend_from_slice(owner.as_ref());
                 buf.extend_from_slice(fee_owner.as_ref());
                 buf.extend_from_slice(&initial_supply.to_le_bytes());
