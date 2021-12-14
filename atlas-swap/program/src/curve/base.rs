@@ -74,12 +74,11 @@ impl SwapCurve {
         swap_source_amount: u128,
         swap_destination_amount: u128,
         trade_direction: TradeDirection,
-        fees: &Fees,
-        swap_curve: &SwapCurve
+        fees: &Fees
     ) -> Option<SwapResult> {
         // debit the fee to calculate the amount swapped
-        let trade_fee = fees.return_fee(source_amount, swap_curve)?;
-        let owner_fee = fees.fixed_fee(source_amount, swap_curve)?;
+        let trade_fee = fees.return_fee(source_amount, self)?;
+        let owner_fee = fees.fixed_fee(source_amount, self)?;
 
         let total_fees = trade_fee.checked_add(owner_fee)?;
         let source_amount_less_fees = source_amount.checked_sub(total_fees)?;

@@ -582,8 +582,7 @@ impl Processor {
                 to_u128(source_account.amount)?,
                 to_u128(dest_account.amount)?,
                 trade_direction,
-                state.fees(),
-                token_swap.swap_curve()
+                state.fees()
             )
             .ok_or(SwapError::ZeroTradingTokens)?;
         if result.destination_amount_swapped < to_u128(minimum_amount_out)? {

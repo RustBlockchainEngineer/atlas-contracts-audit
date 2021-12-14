@@ -9,7 +9,9 @@ use solana_program::{
     program_error::ProgramError,
     program_pack::Pack,
     pubkey::Pubkey,
-    msg
+    msg,
+    system_program,
+    sysvar
 };
 use std::convert::TryInto;
 use std::mem::size_of;
@@ -525,6 +527,8 @@ pub fn set_global_state(
     let accounts = vec![
         AccountMeta::new(*state_account_pubkey, false),
         AccountMeta::new_readonly(*current_owner_pubkey, true),
+        AccountMeta::new_readonly(system_program::id(), false),
+        AccountMeta::new_readonly(sysvar::rent::id(), false),
     ];
 
     Ok(Instruction {
