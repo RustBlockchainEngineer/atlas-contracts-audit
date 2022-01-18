@@ -134,6 +134,10 @@ pub enum SwapError {
     /// Program State should be initialized before creating pool .
     #[error("Program State should be initialized before creating pool")]
     NotInitializedState,
+
+    /// Lamport balance below rent-exempt threshold.
+    #[error("Lamport balance below rent-exempt threshold")]
+    NotRentExempt,
 }
 impl From<SwapError> for ProgramError {
     fn from(e: SwapError) -> Self {

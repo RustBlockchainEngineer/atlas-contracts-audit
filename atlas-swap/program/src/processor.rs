@@ -48,6 +48,15 @@ impl Processor {
         }
     }
 
+    pub fn assert_rent_exempt(rent: &Rent, account_info: &AccountInfo) -> ProgramResult {
+        if !rent.is_exempt(account_info.lamports(), account_info.data_len()) {
+            msg!(&rent.minimum_balance(account_info.data_len()).to_string());
+            Err(SwapError::NotRentExempt.into())
+        } else {
+            Ok(())
+        }
+    }
+
     /// Unpacks a spl_token `Mint`.
     pub fn unpack_mint(
         account_info: &AccountInfo,
@@ -281,7 +290,9 @@ impl Processor {
 
         let system_info = next_account_info(account_info_iter)?;
         let rent_info = next_account_info(account_info_iter)?;
+        let rent = &Rent::from_account_info(rent_info)?;
 
+        Self::assert_rent_exempt(rent, global_state_info)?;
         Self::check_pda(program_id, global_state_info.key, SWAP_TAG)?;
         
         if !current_owner_info.is_signer{
@@ -368,8 +379,11 @@ impl Processor {
         let pool_mint_info = next_account_info(account_info_iter)?;
         let destination_info = next_account_info(account_info_iter)?;
         let token_program_info = next_account_info(account_info_iter)?;
+        let rent_info = next_account_info(account_info_iter)?;
+        let rent = &Rent::from_account_info(rent_info)?;
 
         let token_program_id = *token_program_info.key;
+        Self::assert_rent_exempt(rent, swap_info)?;
         if SwapVersion::is_initialized(&swap_info.data.borrow()) {
             return Err(SwapError::AlreadyInUse.into());
         }

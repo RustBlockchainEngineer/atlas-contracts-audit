@@ -55,6 +55,7 @@ impl<'a> SwapConstraints<'a> {
             && fees.constant_product_fixed_fee_numerator >= self.fees.constant_product_fixed_fee_numerator
             && fees.stable_return_fee_numerator >= self.fees.stable_return_fee_numerator
             && fees.stable_fixed_fee_numerator >= self.fees.stable_fixed_fee_numerator
+            && fees.fee_denominator == self.fees.fee_denominator
         {
             Ok(())
         } else {
