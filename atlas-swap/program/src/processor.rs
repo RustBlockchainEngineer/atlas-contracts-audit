@@ -70,15 +70,14 @@ impl Processor {
         }
     }
 
-    /// Calculates the authority id by generating a program address.
-    pub fn authority_id(
-        program_id: &Pubkey,
-        my_info: &Pubkey,
-        nonce: u8,
-    ) -> Result<Pubkey, SwapError> {
-        Pubkey::create_program_address(&[&my_info.to_bytes()[..32], &[nonce]], program_id)
-            .or(Err(SwapError::InvalidProgramAddress))
+    pub fn assert_pda(seeds:&[&[u8]], program_id: &Pubkey, goal_key: &Pubkey) -> ProgramResult {
+        let (found_key, _bump) = Pubkey::find_program_address(seeds, program_id);
+        if found_key != *goal_key {
+            return Err(SwapError::InvalidProgramAddress);
+        }
+        Ok(())
     }
+    
 
     /// Issue a spl_token `Burn` instruction.
     pub fn token_burn<'a>(
@@ -163,22 +162,7 @@ impl Processor {
         )
     }
 
-    /// check if pda address is correct
-    pub fn check_pda(program_id:&Pubkey, key: &Pubkey, tag: &str)->Result<(), ProgramError>{
-        let seeds = [
-            tag.as_bytes(),
-            program_id.as_ref(),
-        ];
-
-        let (pda_key, _bump) = Pubkey::find_program_address(&seeds, program_id);
-        if pda_key != *key {
-            return Err(SwapError::InvalidPdaAddress.into());
-        } 
-        else {
-            Ok(())
-        }
-    }
-
+    
     /// create or allocate storage for new account
     pub fn create_or_allocate_account_raw<'a>(
         program_id: Pubkey,
@@ -241,11 +225,8 @@ impl Processor {
         if swap_account_info.owner != program_id {
             return Err(ProgramError::IncorrectProgramId);
         }
-        if *authority_info.key
-            != Self::authority_id(program_id, swap_account_info.key, token_swap.nonce())?
-        {
-            return Err(SwapError::InvalidProgramAddress.into());
-        }
+        Self::assert_pda(&[swap_account_info.key.as_ref()], program_id, authority_info.key)?;
+        
         if *token_a_info.key != *token_swap.token_a_account() {
             return Err(SwapError::IncorrectSwapAccount.into());
         }
@@ -293,7 +274,8 @@ impl Processor {
         let rent = &Rent::from_account_info(rent_info)?;
 
         Self::assert_rent_exempt(rent, global_state_info)?;
-        Self::check_pda(program_id, global_state_info.key, SWAP_TAG)?;
+        
+        Self::assert_pda(&[SWAP_TAG.as_bytes(),program_id.as_ref()], program_id, global_state_info.key)?;
         
         if !current_owner_info.is_signer{
             return Err(SwapError::InvalidSigner.into());
@@ -387,12 +369,10 @@ impl Processor {
         if SwapVersion::is_initialized(&swap_info.data.borrow()) {
             return Err(SwapError::AlreadyInUse.into());
         }
-        
-        if *authority_info.key != Self::authority_id(program_id, swap_info.key, nonce)? {
-            return Err(SwapError::InvalidProgramAddress.into());
-        }
+        let (_found_key, nonce) = Pubkey::find_program_address(&[swap_info.key.as_ref()], program_id);
+        Self::assert_pda(&[swap_info.key.as_ref()], program_id, authority_info.key)?;
 
-        Self::check_pda(program_id, gloabal_state_info.key, SWAP_TAG)?;
+        Self::assert_pda(&[SWAP_TAG.as_bytes(),program_id.as_ref()], program_id, global_state_info.key)?;
         
         let state = GlobalState::unpack_from_slice(&gloabal_state_info.data.borrow())?;
         if state.is_initialized() == false
@@ -520,7 +500,7 @@ impl Processor {
             return Err(ProgramError::IncorrectProgramId);
         }
 
-        Self::check_pda(program_id, state_info.key, SWAP_TAG)?;
+        Self::assert_pda(&[SWAP_TAG.as_bytes(),program_id.as_ref()], program_id, state_info.key)?;
         
         let state = GlobalState::unpack_from_slice(&state_info.data.borrow())?;
         if state.is_initialized() == false
@@ -531,10 +511,7 @@ impl Processor {
         // get token_swap by swap_info.data
         let token_swap = SwapVersion::unpack(&swap_info.data.borrow())?;
         // if autority_info.key is not authority id then return invalid program address error
-        if *authority_info.key != Self::authority_id(program_id, swap_info.key, token_swap.nonce())?
-        {
-            return Err(SwapError::InvalidProgramAddress.into());
-        }
+        Self::assert_pda(&[swap_info.key.as_ref()], program_id, authority_info.key)?;
 
         // check if fee account is correct
         let fee_token_account =
@@ -661,7 +638,8 @@ impl Processor {
 
         let token_swap = SwapVersion::unpack(&swap_info.data.borrow())?;
 
-        Self::check_pda(program_id, state_info.key, SWAP_TAG)?;
+        Self::assert_pda(&[SWAP_TAG.as_bytes(),program_id.as_ref()], program_id, state_info.key)?;
+
         let state = GlobalState::unpack_from_slice(&state_info.data.borrow())?;
         if state.is_initialized() == false
         {
@@ -776,7 +754,8 @@ impl Processor {
 
         let token_swap = SwapVersion::unpack(&swap_info.data.borrow())?;
 
-        Self::check_pda(program_id, state_info.key, SWAP_TAG)?;
+        Self::assert_pda(&[SWAP_TAG.as_bytes(),program_id.as_ref()], program_id, state_info.key)?;
+
         let state = GlobalState::unpack_from_slice(&state_info.data.borrow())?;
         if state.is_initialized() == false
         {

@@ -274,7 +274,7 @@ impl Pack for GlobalState{
 
     /// Unpacks a byte buffer into a [SwapV1](struct.SwapV1.html).
     fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
-        if input.len() < GlobalState::LEN{
+        if input.len() != GlobalState::LEN{
             return Err(SwapError::InvalidInstruction.into());    
         }
         let input = array_ref![input, 0, GlobalState::LEN];
