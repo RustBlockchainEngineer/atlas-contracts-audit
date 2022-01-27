@@ -23,9 +23,6 @@ use arbitrary::Arbitrary;
 #[repr(C)]
 #[derive(Debug, PartialEq)]
 pub struct Initialize {
-    /// nonce used to create valid program address
-    pub nonce: u8,
-
     /// swap curve info for pool, including CurveType and anything
     /// else that may be required
     pub swap_curve: SwapCurve,
@@ -205,13 +202,10 @@ impl SwapInstruction {
         msg!("unpack instruction tag {}", tag);
         Ok(match tag {
             0 => {
-                let (&nonce, rest) = rest.split_first().ok_or(SwapError::InvalidInstruction)?;
-                msg!("unpack instruction nonce {}", nonce);
                 let swap_curve = SwapCurve::unpack_unchecked(rest)?;
                 msg!("unpack instruction rest.len() {}", rest.len());
                 // if rest.len() == 1 {
                     Self::Initialize(Initialize {
-                        nonce,
                         swap_curve,
                     })
                 // } else {
@@ -291,11 +285,9 @@ impl SwapInstruction {
         let mut buf = Vec::with_capacity(size_of::<Self>());
         match &*self {
             Self::Initialize(Initialize {
-                nonce,
                 swap_curve
             }) => {
                 buf.push(0);
-                buf.push(*nonce);
                 let mut swap_curve_slice = [0u8; SwapCurve::LEN];
                 Pack::pack_into_slice(swap_curve, &mut swap_curve_slice[..]);
                 buf.extend_from_slice(&swap_curve_slice);
@@ -360,11 +352,9 @@ pub fn initialize(
     pool_pubkey: &Pubkey,
     fee_pubkey: &Pubkey,
     destination_pubkey: &Pubkey,
-    nonce: u8,
     swap_curve: SwapCurve,
 ) -> Result<Instruction, ProgramError> {
     let init_data = SwapInstruction::Initialize(Initialize {
-        nonce,
         swap_curve
     });
     let data = init_data.pack();

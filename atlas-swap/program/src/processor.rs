@@ -348,7 +348,6 @@ impl Processor {
     /// Processes an [Initialize](enum.Instruction.html).
     pub fn process_initialize(
         program_id: &Pubkey,
-        nonce: u8,
         swap_curve: SwapCurve,
         accounts: &[AccountInfo],
     ) -> ProgramResult {
@@ -853,13 +852,11 @@ impl Processor {
         let instruction = SwapInstruction::unpack(input)?;
         match instruction {
             SwapInstruction::Initialize(Initialize {
-                nonce,
                 swap_curve
             }) => {
                 msg!("Instruction: Init");
                 Self::process_initialize(
                     program_id,
-                    nonce,
                     swap_curve,
                     accounts,
                 )
